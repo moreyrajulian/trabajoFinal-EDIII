@@ -15,6 +15,7 @@
 
 #define CCLK_DAC 25000000
 #define TRANSFER_SIZE 4095
+#define SEÑALES 4
 
 void configPCB(void);
 void configADC(void);
@@ -27,11 +28,19 @@ void configDMA1(void);
 void configDMA2(void);
 void configDMA3(void);
 
-
 volatile uint16_t buffer_sin[]={0};
 volatile uint16_t buffer_triangular[]={0};
 volatile uint16_t buffer_sierra[]={0};
 volatile uint16_t buffer_cuadrada[]={0};
+
+volatile GPDMA_Channel_CFG_Type dma0={0};
+volatile GPDMA_LLI_Type lli0={0};
+volatile GPDMA_Channel_CFG_Type dma1={0};
+volatile GPDMA_LLI_Type lli1={0};
+volatile GPDMA_Channel_CFG_Type dma2={0};
+volatile GPDMA_LLI_Type lli2={0};
+volatile GPDMA_Channel_CFG_Type dma3={0};
+volatile GPDMA_LLI_Type lli3={0};
 
 int main(void){
 	configPCB();
@@ -39,7 +48,8 @@ int main(void){
 	configDAC();
 	configUART();
 	configEINT();
-	configDMA();
+	GPDMA_Init();
+	GPDMA_ChannelCmd(0,ENABLE);
 	configTIMER0();
 
 	while(1){
@@ -126,9 +136,6 @@ void configDAC(void){
 }
 
 void configDMA0(void){
-	GPDMA_Channel_CFG_Type dma0={0};
-	GPDMA_LLI_Type lli0={0};
-
 	dma0.ChannelNum=0;
 	dma0.TransferSize=TRANSFER_SIZE;
 	dma0.TransferWidth=GPDMA_WIDTH_HALFWORD;
@@ -143,14 +150,9 @@ void configDMA0(void){
 	lli0.DstAddr=0;
 	lli0.NextLLI=(uint8_t*)lli0;
 	lli0.Control=TRANSFER_SIZE|(1<<18)|(1<<21)|(1<<24)|(1<<31);
-
-	GPDMA_Init();
 }
 
 void configDMA1(void){
-	GPDMA_Channel_CFG_Type dma1={0};
-	GPDMA_LLI_Type lli1={0};
-
 	dma1.ChannelNum=0;
 	dma1.TransferSize=4095;
 	dma1.TransferWidth=GPDMA_WIDTH_HALFWORD;
@@ -165,14 +167,9 @@ void configDMA1(void){
 	lli1.DstAddr=0;
 	lli1.NextLLI=(uint8_t*)lli1;
 	lli1.Control=TRANSFER_SIZE|(1<<18)|(1<<21)|(1<<24)|(1<<31);
-
-	GPDMA_Init();
 }
 
 void configDMA2(void){
-	GPDMA_Channel_CFG_Type dma2={0};
-	GPDMA_LLI_Type lli2={0};
-
 	dma2.ChannelNum=0;
 	dma2.TransferSize=4095;
 	dma2.TransferWidth=GPDMA_WIDTH_HALFWORD;
@@ -187,14 +184,9 @@ void configDMA2(void){
 	lli2.DstAddr=0;
 	lli2.NextLLI=(uint8_t*)lli2;
 	lli2.Control=TRANSFER_SIZE|(1<<18)|(1<<21)|(1<<24)|(1<<31);
-
-	GPDMA_Init();
 }
 
 void configDMA3(void){
-	GPDMA_Channel_CFG_Type dma3={0};
-	GPDMA_LLI_Type lli3={0};
-
 	dma3.ChannelNum=0;
 	dma3.TransferSize=4095;
 	dma3.TransferWidth=GPDMA_WIDTH_HALFWORD;
@@ -209,12 +201,21 @@ void configDMA3(void){
 	lli3.DstAddr=0;
 	lli3.NextLLI=(uint8_t*)lli3;
 	lli3.Control=TRANSFER_SIZE|(1<<18)|(1<<21)|(1<<24)|(1<<31);
-
-	GPDMA_Init();
 }
 
 void EINT1_IRQHandler(void){
 	static uint8_t contador=0;
+	contador=(contador+1)%SEÑALES;
+
+	switch (contador){
+	case 1: GPDMA_Setup(&dma0); break;
+	case 2: GPDMA_Setup(&dma1); break;
+	case 3: GPDMA_Setup(&dma2); break;
+	case 4: GPDMA_Setup(&dma3); break;
+	default: GPDMA_Setup(&dma0); break;
+	}
+
+	EXTI_ClearEXTIFlag(EXTI_EINT1);
 }
 
 
