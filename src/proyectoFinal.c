@@ -13,9 +13,16 @@
 //medir valores rms de tension, hasta que frecuencia es valido el valor rms
 //en funcion de la fmuestreo hasta que frecuencia es valido el true rms
 
+
+//Queiro leer señal de entrada por adc. Guardar en memoria
+// Debo verificar quq ela velocidad de peticion al dma del adc sea más
+// rapida que la del dac al dma. Ya que el dac tiene prioridad por ser canal 0
+
+
+
 #define CCLK_DAC 25000000
 #define TRANSFER_SIZE 4095
-#define SEÑALES 4
+#define SIGNALS 4
 
 void configPCB(void);
 void configADC(void);
@@ -41,6 +48,9 @@ volatile GPDMA_Channel_CFG_Type dma2={0};
 volatile GPDMA_LLI_Type lli2={0};
 volatile GPDMA_Channel_CFG_Type dma3={0};
 volatile GPDMA_LLI_Type lli3={0};
+volatile GPDMA_Channel_CFG_Type dma_adc={0};
+volatile GPDMA_LLI_Type lli_adc={0};
+
 
 int main(void){
 	configPCB();
@@ -133,6 +143,23 @@ void configDAC(void){
 	DAC_SetBias(LPC_DAC,0);
 	DAC_ConfigDAConverterControl(LPC_DAC,&dac);
 	DAC_SetDMATimeOut(LPC_DAC,100); //ver TIME_OUT
+}
+
+void configDMA_ADC(void){
+	dma0.ChannelNum=1;
+	dma0.TransferSize=TRANSFER_SIZE;
+	dma0.TransferWidth=GPDMA_WIDTH_HALFWORD;
+	dma0.SrcMemAddr=0;
+	dma0.DstMemAddr=(uint8_t*)buffer_circ;
+	dma0.TransferType=GPDMA_TRANSFERTYPE_P2M;
+	dma0.SrcConn=GPDMA_CONN_ADC;
+	dma0.DstConn=0;
+	dma0.DMALLI=(uint8_t*)lli_adc;
+
+	lli0.SrcAddr=0;
+	lli0.DstAddr=(uint8_t*)buffer_adc;
+	lli0.NextLLI=(uint8_t*)lli0;
+	lli0.Control=TRANSFER_SIZE|(1<<18)|(1<<21)|(1<<24)|(1<<31);
 }
 
 void configDMA0(void){
