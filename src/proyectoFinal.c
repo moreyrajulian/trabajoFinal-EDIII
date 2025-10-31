@@ -217,17 +217,3 @@ void EINT1_IRQHandler(void){
 
 	EXTI_ClearEXTIFlag(EXTI_EINT1);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
