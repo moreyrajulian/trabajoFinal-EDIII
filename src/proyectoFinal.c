@@ -1,3 +1,4 @@
+#include <LPC17xx.h>
 #include <stdio.h>
 #include "lpc17xx_gpio.h"
 #include "lpc17xx_pinsel.h"
@@ -13,16 +14,21 @@
 //medir valores rms de tension, hasta que frecuencia es valido el valor rms
 //en funcion de la fmuestreo hasta que frecuencia es valido el true rms
 
-
 //Queiro leer señal de entrada por adc. Guardar en memoria
 // Debo verificar quq ela velocidad de peticion al dma del adc sea más
 // rapida que la del dac al dma. Ya que el dac tiene prioridad por ser canal 0
 
-
-
-#define CCLK_DAC 25000000
+#define BUFFER_SIZE 4095 //corroborar
+#define PCLK_DAC 25000000
+#define MUESTRAS_DAC 1024
 #define TRANSFER_SIZE 4095
 #define SIGNALS 4
+#define FRECUENCIAS 5
+#define FRECUENCIA_0 100
+#define FRECUENCIA_1 1000
+#define FRECUENCIA_2 2500
+#define FRECUENCIA_3 5000
+#define FRECUENCIA_4 10000
 
 void configPCB(void);
 void configADC(void);
@@ -34,41 +40,52 @@ void configDMA0(void);
 void configDMA1(void);
 void configDMA2(void);
 void configDMA3(void);
+void configDMA_ADC(void);
+void llenar_sin(void);
+void llenar_triangular(void);
+void llenar_sierra(void);
+void llenar_cuadrada(void);
 
+//buffer con valores convertidos por el ADC
+volatile uint16_t buffer_adc[BUFFER_SIZE]={0};
+
+//buffers para generar las 4 señales mediante software
 volatile uint16_t buffer_sin[]={0};
 volatile uint16_t buffer_triangular[]={0};
 volatile uint16_t buffer_sierra[]={0};
 volatile uint16_t buffer_cuadrada[]={0};
 
 volatile GPDMA_Channel_CFG_Type dma0={0};
-volatile GPDMA_LLI_Type lli0={0};
 volatile GPDMA_Channel_CFG_Type dma1={0};
-volatile GPDMA_LLI_Type lli1={0};
 volatile GPDMA_Channel_CFG_Type dma2={0};
-volatile GPDMA_LLI_Type lli2={0};
 volatile GPDMA_Channel_CFG_Type dma3={0};
-volatile GPDMA_LLI_Type lli3={0};
 volatile GPDMA_Channel_CFG_Type dma_adc={0};
-volatile GPDMA_LLI_Type lli_adc={0};
 
+volatile uint32_t RMS=0;
 
 int main(void){
+	llenar_sin();
+	llenar_triangular();
+	llenar_sierra();
+	llenar_cuadrada();
 	configPCB();
 	configADC();
 	configDAC();
 	configUART();
 	configEINT();
+	configDMA0();
+	configDMA1();
+	configDMA2();
+	configDMA3();
+	configDMA_ADC();
 	GPDMA_Init();
 	GPDMA_ChannelCmd(0,ENABLE);
+	GPDMA_ChannelCmd(1,ENABLE);
 	configTIMER0();
 
 	while(1){
 		__WFI();
 	}
-}
-
-void configUART(void){
-
 }
 
 void configPCB(void){
@@ -124,10 +141,9 @@ void configEINT(void){
 
 void configADC(void){
 	ADC_Init(LPC_ADC,200000);
-	ADC_BurstCmd(LPC_ADC,DISABLE);
-	ADC_StartCmd(LPC_ADC,ADC_START_ON_EINT0);
+	ADC_BurstCmd(LPC_ADC,ENABLE);
+	ADC_StartCmd(LPC_ADC,ADC_START_CONTINUOUS);
 	ADC_ChannelCmd(LPC_ADC,0,ENABLE);
-	ADC_EdgeStartConfig(LPC_ADC,ADC_START_ON_FALLING);
 	ADC_IntConfig(LPC_ADC,ADC_ADINTEN0,ENABLE);
 	NVIC_EnableIRQ(ADC_IRQn);
 }
@@ -142,27 +158,34 @@ void configDAC(void){
 	DAC_Init(LPC_DAC);
 	DAC_SetBias(LPC_DAC,0);
 	DAC_ConfigDAConverterControl(LPC_DAC,&dac);
-	DAC_SetDMATimeOut(LPC_DAC,100); //ver TIME_OUT
+	DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_0*MUESTRAS_DAC))-1); //dependerá de la frecuencia de la onda que querramos
 }
 
 void configDMA_ADC(void){
-	dma0.ChannelNum=1;
-	dma0.TransferSize=TRANSFER_SIZE;
-	dma0.TransferWidth=GPDMA_WIDTH_HALFWORD;
-	dma0.SrcMemAddr=0;
-	dma0.DstMemAddr=(uint8_t*)buffer_circ;
-	dma0.TransferType=GPDMA_TRANSFERTYPE_P2M;
-	dma0.SrcConn=GPDMA_CONN_ADC;
-	dma0.DstConn=0;
-	dma0.DMALLI=(uint8_t*)lli_adc;
+	GPDMA_LLI_Type lli_adc={0};
+	
+	dma_adc.ChannelNum=1;
+	dma_adc.TransferSize=TRANSFER_SIZE;
+	dma_adc.TransferWidth=GPDMA_WIDTH_HALFWORD;
+	dma_adc.SrcMemAddr=0;
+	dma_adc.DstMemAddr=(uint8_t*)buffer_adc;
+	dma_adc.TransferType=GPDMA_TRANSFERTYPE_P2M;
+	dma_adc.SrcConn=GPDMA_CONN_ADC;
+	dma_adc.DstConn=0;
+	dma_adc.DMALLI=(uint8_t*)lli_adc;
 
-	lli0.SrcAddr=0;
-	lli0.DstAddr=(uint8_t*)buffer_adc;
-	lli0.NextLLI=(uint8_t*)lli0;
-	lli0.Control=TRANSFER_SIZE|(1<<18)|(1<<21)|(1<<24)|(1<<31);
+	lli_adc.SrcAddr=0;
+	lli_adc.DstAddr=(uint8_t*)buffer_adc;
+	lli_adc.NextLLI=(uint8_t*)lli_adc;
+	lli_adc.Control=TRANSFER_SIZE|(1<<18)|(1<<21)|(1<<24)|(1<<31);
+
+	GPDMA_Setup(&dma_adc);
+	NVIC_EnableIRQ(DMA_IRQn);
 }
 
 void configDMA0(void){
+	GPDMA_LLI_Type lli0={0};
+
 	dma0.ChannelNum=0;
 	dma0.TransferSize=TRANSFER_SIZE;
 	dma0.TransferWidth=GPDMA_WIDTH_HALFWORD;
@@ -180,6 +203,8 @@ void configDMA0(void){
 }
 
 void configDMA1(void){
+	GPDMA_LLI_Type lli1={0};
+
 	dma1.ChannelNum=0;
 	dma1.TransferSize=4095;
 	dma1.TransferWidth=GPDMA_WIDTH_HALFWORD;
@@ -197,6 +222,8 @@ void configDMA1(void){
 }
 
 void configDMA2(void){
+	GPDMA_LLI_Type lli2={0};
+
 	dma2.ChannelNum=0;
 	dma2.TransferSize=4095;
 	dma2.TransferWidth=GPDMA_WIDTH_HALFWORD;
@@ -214,6 +241,8 @@ void configDMA2(void){
 }
 
 void configDMA3(void){
+	GPDMA_LLI_Type lli3={0};
+
 	dma3.ChannelNum=0;
 	dma3.TransferSize=4095;
 	dma3.TransferWidth=GPDMA_WIDTH_HALFWORD;
@@ -230,17 +259,39 @@ void configDMA3(void){
 	lli3.Control=TRANSFER_SIZE|(1<<18)|(1<<21)|(1<<24)|(1<<31);
 }
 
-void EINT1_IRQHandler(void){
+void EINT0_IRQHandler(void){
 	static uint8_t contador=0;
 	contador=(contador+1)%SEÑALES;
 
 	switch (contador){
-	case 1: GPDMA_Setup(&dma0); break;
-	case 2: GPDMA_Setup(&dma1); break;
-	case 3: GPDMA_Setup(&dma2); break;
-	case 4: GPDMA_Setup(&dma3); break;
-	default: GPDMA_Setup(&dma0); break;
+		case 1: GPDMA_Setup(&dma0); break;
+		case 2: GPDMA_Setup(&dma1); break;
+		case 3: GPDMA_Setup(&dma2); break;
+		case 4: GPDMA_Setup(&dma3); break;
+		default: GPDMA_Setup(&dma0); break;
+	}
+
+	EXTI_ClearEXTIFlag(EXTI_EINT0);
+}
+
+void EINT1_IRQHandler(void){
+	static uint8_t contador=0;
+	contador=(contador+1)%FRECUENCIAS;
+
+	switch (contador){
+		case 1: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_1*MUESTRAS_DAC))-1); break;
+		case 2: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_2*MUESTRAS_DAC))-1); break;
+		case 3: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_3*MUESTRAS_DAC))-1); break;
+		case 4: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_4*MUESTRAS_DAC))-1); break;
+		case 5: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_0*MUESTRAS_DAC))-1); break;
+		default: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_0*MUESTRAS_DAC))-1); break;
 	}
 
 	EXTI_ClearEXTIFlag(EXTI_EINT1);
+}
+
+void DMA_IRQHandler(void){
+	if(GPDMA_IntGetStatus(GPDMA_INTTC,GPDMA_CHANNEL_1)){
+		//logica para calcular RMS? en teoria cuando interrumpa esto llenaria el buffer de los valores que convirtio el ADC
+	}
 }
