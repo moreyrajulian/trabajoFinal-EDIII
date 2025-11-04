@@ -18,10 +18,10 @@
 // Debo verificar quq ela velocidad de peticion al dma del adc sea más
 // rapida que la del dac al dma. Ya que el dac tiene prioridad por ser canal 0
 
-#define BUFFER_SIZE 4095 //corroborar
+#define BUFFER_SIZE 4096 //corroborar
 #define PCLK_DAC 25000000
 #define MUESTRAS_DAC 1024
-#define TRANSFER_SIZE 4095
+#define TRANSFER_SIZE 4096
 #define SIGNALS 4
 #define FRECUENCIAS 5
 #define FRECUENCIA_0 100
@@ -29,6 +29,7 @@
 #define FRECUENCIA_2 2500
 #define FRECUENCIA_3 5000
 #define FRECUENCIA_4 10000
+#define MAX_LENGTH 256
 
 void configPCB(void);
 void configADC(void);
@@ -46,16 +47,16 @@ void llenar_triangular(void);
 void llenar_sierra(void);
 void llenar_cuadrada(void);
 float calcularRMS(uint16_t buffer[BUFFER_SIZE]);
-void enviarUART();
+void enviarUART(char cadena[MAX_LENGTH]);
 
 //buffer con valores convertidos por el ADC
-volatile uint16_t buffer_adc[BUFFER_SIZE]={0};
+volatile uint16_t buffer_adc[BUFFER_SIZE];
 
 //buffers para generar las 4 señales mediante software
-volatile uint16_t buffer_sin[]={0};
-volatile uint16_t buffer_triangular[]={0};
-volatile uint16_t buffer_sierra[]={0};
-volatile uint16_t buffer_cuadrada[]={0};
+volatile uint16_t buffer_sin[BUFFER_SIZE];
+volatile uint16_t buffer_triangular[BUFFER_SIZE];
+volatile uint16_t buffer_sierra[BUFFER_SIZE];
+volatile uint16_t buffer_cuadrada[BUFFER_SIZE];
 
 volatile GPDMA_Channel_CFG_Type dma0={0};
 volatile GPDMA_Channel_CFG_Type dma1={0};
@@ -87,8 +88,6 @@ int main(void){
 
 	while(1){
 		__WFI();
-
-		enviarUART(calcularRMS(buffer_adc));
 	}
 }
 
@@ -125,6 +124,11 @@ void configPCB(void){
 	PINSEL_CFG_Type dac0={0};
 	PINSEL_CFG_Type eint0={0};
 	PINSEL_CFG_Type eint1={0};
+	PINSEL_CFG_Type uart0_tx = {0};
+
+	uart0_tx.Portnum = 0;
+	uart0_tx.Pinnum = 2;
+	uart0_tx.Funcnum = 1;
 
 	adc0.Portnum=0;
 	adc0.Pinnum=23;
@@ -150,6 +154,7 @@ void configPCB(void){
 	PINSEL_ConfigPin(&dac0);
 	PINSEL_ConfigPin(&eint0);
 	PINSEL_ConfigPin(&eint1);
+	PINSEL_ConfigPin(&uart0_tx);
 }
 
 void configEINT(void){
@@ -160,9 +165,9 @@ void configEINT(void){
 	eint0.EXTI_Mode=EXTI_MODE_EDGE_SENSITIVE;
 	eint0.EXTI_polarity=EXTI_POLARITY_LOW_ACTIVE_OR_FALLING_EDGE;
 
-	eint0.EXTI_Line=1;
-	eint0.EXTI_Mode=EXTI_MODE_EDGE_SENSITIVE;
-	eint0.EXTI_polarity=EXTI_POLARITY_LOW_ACTIVE_OR_FALLING_EDGE;
+	eint1.EXTI_Line=1;
+	eint1.EXTI_Mode=EXTI_MODE_EDGE_SENSITIVE;
+	eint1.EXTI_polarity=EXTI_POLARITY_LOW_ACTIVE_OR_FALLING_EDGE;
 
 	EXTI_Init();
 	EXTI_Config(&eint0);
@@ -291,6 +296,35 @@ void configDMA3(void){
 	lli3.Control=TRANSFER_SIZE|(1<<18)|(1<<21)|(1<<24)|(1<<31);
 }
 
+
+void configUART(){
+	LPC_UART0->LCR = (3 << 0) | (0 << 2) | (0 << 3) | (1 << 6) | (1 << 7);
+
+	LPC_UART0->DLM = 0x00;
+	LPC_UART0->DLL = 0xA2;  // 162 decimal
+	LPC_UART0->FDR = (1 << 4) | 0; // MULVAL=1, DIVADDVAL=0
+
+	LPC_UART0->FCR = 0x07;  // FIFO habilitado y reseteado
+	LPC_UART0->TER = (1 << 7); // Habilitar TX
+
+}
+
+void UART0_SendByte(char c) {
+    while (!(LPC_UART0->LSR & (1 << 5)));  // Esperar THR vacío
+    LPC_UART0->THR = c;
+}
+
+void enviarUART(char cadena[MAX_LENGTH]) {
+    uint32_t i = 0;
+    while (cadena[i] != '\0') {
+        UART0_SendByte(cadena[i]);
+        i++;
+    }
+    UART0_SendByte('\n');
+    UART0_SendByte('\n');
+
+}
+
 void EINT0_IRQHandler(void){
 	static uint8_t contador=0;
 	contador=(contador+1)%SEÑALES;
@@ -322,10 +356,15 @@ void EINT1_IRQHandler(void){
 	EXTI_ClearEXTIFlag(EXTI_EINT1);
 }
 
-void DMA_IRQHandler(void){
-	if(GPDMA_IntGetStatus(GPDMA_INTTC,GPDMA_CHANNEL_1)){
-		//logica para calcular RMS? en teoria cuando interrumpa esto llenaria el buffer de los valores que convirtio el ADC
-	}
+void DMA_IRQHandler(void) {
+    if (GPDMA_IntGetStatus(GPDMA_INTTC, GPDMA_CHANNEL_1)) {
+        float valor = calcularRMS(buffer_adc);
+        char texto[32];
+        sprintf(texto, "RMS: %.2f\r\n", valor);
+        enviarUART(texto);
+
+        GPDMA_ClearIntPending(GPDMA_INTTC, GPDMA_CHANNEL_1);
+    }
 }
 
 void TIMER0_IRQHandler(void) {
@@ -335,32 +374,25 @@ void TIMER0_IRQHandler(void) {
     }
 }
 
-float calcularRMS(uint16_t buffer[BUFFER_SIZE]){
+float sqrtAprox(float x) {
+    if (x <= 0.0f) return 0.0f;
+    float res = x;
+    for (int i = 0; i < 20; i++) {
+        res = 0.5f * (res + x / res);
+    }
+    return res;
+}
 
-	float sqrtAprox(float x) {
-	    float res = x;
-	    float half = 0.5f * x;
+float calcularRMS(uint16_t buffer[BUFFER_SIZE]) {
+    float suma = 0.0f;
+    for (uint32_t i = 0; i < BUFFER_SIZE; i++) {
+        float val = (float)buffer[i];
+        suma += val * val;
+    }
 
-	    // Tres iteraciones son suficientes
-	    int i;
-	    for (i = 0; i < 3; i++) {
-	        res = 0.5f * (res + x / res);
-	    }
-	    return res;
-	}
-
-	uint32_t i;
-	float suma = 0.0f;
-
-	for (i = 0; i < BUFFER_SIZE; i++) {
-		float val = (float)buffer[i];
-		suma += val * val;
-	}
-
-	float promedio = suma / BUFFER_SIZE;
-	float rms = sqrtAprox(promedio);
-
-	return rms;
+    float promedio = suma / BUFFER_SIZE;
+    float rms = sqrtAprox(promedio);
+    return rms;
 }
 
 
