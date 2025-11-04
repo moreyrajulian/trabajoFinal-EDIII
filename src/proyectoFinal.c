@@ -45,6 +45,8 @@ void llenar_sin(void);
 void llenar_triangular(void);
 void llenar_sierra(void);
 void llenar_cuadrada(void);
+float calcularRMS(uint16_t buffer[BUFFER_SIZE]);
+void enviarUART();
 
 //buffer con valores convertidos por el ADC
 volatile uint16_t buffer_adc[BUFFER_SIZE]={0};
@@ -85,8 +87,38 @@ int main(void){
 
 	while(1){
 		__WFI();
+
+		enviarUART(calcularRMS(buffer_adc));
 	}
 }
+
+void configTIMER0(void) {
+    TIM_TIMERCFG_Type struct_config;
+    TIM_MATCHCFG_Type struct_match;
+
+    // --- Configuración base ---
+    struct_config.PrescaleOption = TIM_PRESCALE_TICKVAL;
+    struct_config.PrescaleValue  = 1;  // Incrementa cada 1 µs
+
+    // --- Configuración del match ---
+    struct_match.MatchChannel        = 0;
+    struct_match.IntOnMatch          = ENABLE;
+    struct_match.ResetOnMatch        = ENABLE;
+    struct_match.StopOnMatch         = DISABLE;
+    struct_match.ExtMatchOutputType  = TIM_EXTMATCH_NOTHING;
+    struct_match.MatchValue          = 1000000;  // 1 segundo
+
+    // --- Inicializar y configurar timer ---
+    TIM_Init(LPC_TIM0, TIM_TIMER_MODE, &struct_config);
+    TIM_ConfigMatch(LPC_TIM0, &struct_match);
+
+    // --- Habilitar interrupción ---
+    NVIC_EnableIRQ(TIMER0_IRQn);
+
+    // --- Iniciar timer ---
+    TIM_Cmd(LPC_TIM0, ENABLE);
+}
+
 
 void configPCB(void){
 	PINSEL_CFG_Type adc0={0};
@@ -295,3 +327,42 @@ void DMA_IRQHandler(void){
 		//logica para calcular RMS? en teoria cuando interrumpa esto llenaria el buffer de los valores que convirtio el ADC
 	}
 }
+
+void TIMER0_IRQHandler(void) {
+    if (TIM_GetIntStatus(LPC_TIM0, TIM_MR0_INT)) {
+        TIM_ClearIntPending(LPC_TIM0, TIM_MR0_INT);  // limpiar bandera
+
+    }
+}
+
+float calcularRMS(uint16_t buffer[BUFFER_SIZE]){
+
+	float sqrtAprox(float x) {
+	    float res = x;
+	    float half = 0.5f * x;
+
+	    // Tres iteraciones son suficientes
+	    int i;
+	    for (i = 0; i < 3; i++) {
+	        res = 0.5f * (res + x / res);
+	    }
+	    return res;
+	}
+
+	uint32_t i;
+	float suma = 0.0f;
+
+	for (i = 0; i < BUFFER_SIZE; i++) {
+		float val = (float)buffer[i];
+		suma += val * val;
+	}
+
+	float promedio = suma / BUFFER_SIZE;
+	float rms = sqrtAprox(promedio);
+
+	return rms;
+}
+
+
+
+
