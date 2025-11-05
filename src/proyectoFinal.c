@@ -50,19 +50,13 @@ float calcularRMS(uint16_t buffer[BUFFER_SIZE]);
 void enviarUART(char cadena[MAX_LENGTH]);
 
 //buffer con valores convertidos por el ADC
-volatile uint16_t buffer_adc[BUFFER_SIZE];
+uint16_t buffer_adc[BUFFER_SIZE];
 
 //buffers para generar las 4 señales mediante software
-volatile uint16_t buffer_sin[BUFFER_SIZE];
-volatile uint16_t buffer_triangular[BUFFER_SIZE];
-volatile uint16_t buffer_sierra[BUFFER_SIZE];
-volatile uint16_t buffer_cuadrada[BUFFER_SIZE];
-
-volatile GPDMA_Channel_CFG_Type dma0={0};
-volatile GPDMA_Channel_CFG_Type dma1={0};
-volatile GPDMA_Channel_CFG_Type dma2={0};
-volatile GPDMA_Channel_CFG_Type dma3={0};
-volatile GPDMA_Channel_CFG_Type dma_adc={0};
+const uint16_t buffer_sin[BUFFER_SIZE];
+const uint16_t buffer_triangular[BUFFER_SIZE];
+const uint16_t buffer_sierra[BUFFER_SIZE];
+const uint16_t buffer_cuadrada[BUFFER_SIZE];
 
 volatile uint32_t RMS=0;
 
@@ -76,10 +70,6 @@ int main(void){
 	configDAC();
 	configUART();
 	configEINT();
-	configDMA0();
-	configDMA1();
-	configDMA2();
-	configDMA3();
 	configDMA_ADC();
 	GPDMA_Init();
 	GPDMA_ChannelCmd(0,ENABLE);
@@ -199,21 +189,22 @@ void configDAC(void){
 }
 
 void configDMA_ADC(void){
+	GPDMA_Channel_CFG_Type dma_adc={0};
 	GPDMA_LLI_Type lli_adc={0};
-	
+
 	dma_adc.ChannelNum=1;
 	dma_adc.TransferSize=TRANSFER_SIZE;
 	dma_adc.TransferWidth=GPDMA_WIDTH_HALFWORD;
 	dma_adc.SrcMemAddr=0;
-	dma_adc.DstMemAddr=(uint8_t*)buffer_adc;
+	dma_adc.DstMemAddr=(uint32_t)&buffer_adc;
 	dma_adc.TransferType=GPDMA_TRANSFERTYPE_P2M;
 	dma_adc.SrcConn=GPDMA_CONN_ADC;
 	dma_adc.DstConn=0;
-	dma_adc.DMALLI=(uint8_t*)lli_adc;
+	dma_adc.DMALLI=(uint32_t)&lli_adc;
 
 	lli_adc.SrcAddr=0;
-	lli_adc.DstAddr=(uint8_t*)buffer_adc;
-	lli_adc.NextLLI=(uint8_t*)lli_adc;
+	lli_adc.DstAddr=(uint32_t)&buffer_adc;
+	lli_adc.NextLLI=(uint32_t)&lli_adc;
 	lli_adc.Control=TRANSFER_SIZE|(1<<18)|(1<<21)|(1<<24)|(1<<31);
 
 	GPDMA_Setup(&dma_adc);
@@ -221,81 +212,92 @@ void configDMA_ADC(void){
 }
 
 void configDMA0(void){
+	GPDMA_Channel_CFG_Type dma0={0};
 	GPDMA_LLI_Type lli0={0};
 
 	dma0.ChannelNum=0;
 	dma0.TransferSize=TRANSFER_SIZE;
 	dma0.TransferWidth=GPDMA_WIDTH_HALFWORD;
-	dma0.SrcMemAddr=(uint8_t*)buffer_sin;
+	dma0.SrcMemAddr=(uint32_t)&buffer_sin;
 	dma0.DstMemAddr=0;
 	dma0.TransferType=GPDMA_TRANSFERTYPE_M2P;
 	dma0.SrcConn=0;
 	dma0.DstConn=GPDMA_CONN_DAC;
-	dma0.DMALLI=(uint8_t*)lli0;
+	dma0.DMALLI=(uint32_t)&lli0;
 
-	lli0.SrcAddr=(uint8_t*)buffer_sin;
+	lli0.SrcAddr=(uint32_t)&buffer_sin;
 	lli0.DstAddr=0;
-	lli0.NextLLI=(uint8_t*)lli0;
+	lli0.NextLLI=(uint32_t)&lli0;
 	lli0.Control=TRANSFER_SIZE|(1<<18)|(1<<21)|(1<<24)|(1<<31);
+
+	GPDMA_Setup(&dma0);
 }
 
 void configDMA1(void){
+	GPDMA_Channel_CFG_Type dma1={0};
 	GPDMA_LLI_Type lli1={0};
 
 	dma1.ChannelNum=0;
 	dma1.TransferSize=4095;
 	dma1.TransferWidth=GPDMA_WIDTH_HALFWORD;
-	dma1.SrcMemAddr=(uint8_t*)buffer_cuadrada;
+	dma1.SrcMemAddr=(uint32_t)&buffer_cuadrada;
 	dma1.DstMemAddr=0;
 	dma1.TransferType=GPDMA_TRANSFERTYPE_M2P;
 	dma1.SrcConn=0;
 	dma1.DstConn=GPDMA_CONN_DAC;
-	dma1.DMALLI=(uint8_t*)lli1;
+	dma1.DMALLI=(uint32_t)&lli1;
 
-	lli1.SrcAddr=(uint8_t*)buffer_cuadrada;
+	lli1.SrcAddr=(uint32_t)&buffer_cuadrada;
 	lli1.DstAddr=0;
-	lli1.NextLLI=(uint8_t*)lli1;
+	lli1.NextLLI=(uint32_t)&lli1;
 	lli1.Control=TRANSFER_SIZE|(1<<18)|(1<<21)|(1<<24)|(1<<31);
+
+	GPDMA_Setup(&dma1);
 }
 
 void configDMA2(void){
+	GPDMA_Channel_CFG_Type dma2={0};
 	GPDMA_LLI_Type lli2={0};
 
 	dma2.ChannelNum=0;
 	dma2.TransferSize=4095;
 	dma2.TransferWidth=GPDMA_WIDTH_HALFWORD;
-	dma2.SrcMemAddr=(uint8_t*)buffer_triangular;
+	dma2.SrcMemAddr=(uint32_t)&buffer_triangular;
 	dma2.DstMemAddr=0;
 	dma2.TransferType=GPDMA_TRANSFERTYPE_M2P;
 	dma2.SrcConn=0;
 	dma2.DstConn=GPDMA_CONN_DAC;
-	dma2.DMALLI=(uint8_t*)lli2;
+	dma2.DMALLI=(uint32_t)&lli2;
 
-	lli2.SrcAddr=(uint8_t*)buffer_triangular;
+	lli2.SrcAddr=(uint32_t)&buffer_triangular;
 	lli2.DstAddr=0;
-	lli2.NextLLI=(uint8_t*)lli2;
+	lli2.NextLLI=(uint32_t)&lli2;
 	lli2.Control=TRANSFER_SIZE|(1<<18)|(1<<21)|(1<<24)|(1<<31);
+
+	GPDMA_Setup(&dma2);
 }
 
 void configDMA3(void){
+	GPDMA_Channel_CFG_Type dma3={0};
 	GPDMA_LLI_Type lli3={0};
 
 	dma3.ChannelNum=0;
 	dma3.TransferSize=4095;
 	dma3.TransferWidth=GPDMA_WIDTH_HALFWORD;
-	dma3.SrcMemAddr=(uint8_t*)buffer_sierra;
+	dma3.SrcMemAddr=(uint32_t)&buffer_sierra;
 	dma3.DstMemAddr=0;
 	dma3.TransferType=GPDMA_TRANSFERTYPE_M2P;
 	dma3.SrcConn=0;
 	dma3.DstConn=GPDMA_CONN_DAC;
-	dma3.DMALLI=(uint8_t*)lli3;
+	dma3.DMALLI=(uint32_t)&lli3;
 
-	lli3.SrcAddr=(uint8_t*)buffer_sierra;
+	lli3.SrcAddr=(uint32_t)&buffer_sierra;
 	lli3.DstAddr=0;
-	lli3.NextLLI=(uint8_t*)lli3;
+	lli3.NextLLI=(uint32_t)&lli3;
 	lli3.Control=TRANSFER_SIZE|(1<<18)|(1<<21)|(1<<24)|(1<<31);
-}
 
+	GPDMA_Setup(&dma3);
+}
 
 void configUART(){
 	LPC_UART0->LCR = (3 << 0) | (0 << 2) | (0 << 3) | (1 << 6) | (1 << 7);
@@ -322,19 +324,18 @@ void enviarUART(char cadena[MAX_LENGTH]) {
     }
     UART0_SendByte('\n');
     UART0_SendByte('\n');
-
 }
 
 void EINT0_IRQHandler(void){
 	static uint8_t contador=0;
-	contador=(contador+1)%SEÑALES;
+	contador=(contador+1)%SIGNALS;
 
 	switch (contador){
-		case 1: GPDMA_Setup(&dma0); break;
-		case 2: GPDMA_Setup(&dma1); break;
-		case 3: GPDMA_Setup(&dma2); break;
-		case 4: GPDMA_Setup(&dma3); break;
-		default: GPDMA_Setup(&dma0); break;
+		case 1: configDMA0(); break;
+		case 2: configDMA1(); break;
+		case 3: configDMA2(); break;
+		case 4: configDMA3(); break;
+		default: configDMA0(); break;
 	}
 
 	EXTI_ClearEXTIFlag(EXTI_EINT0);
@@ -357,13 +358,13 @@ void EINT1_IRQHandler(void){
 }
 
 void DMA_IRQHandler(void) {
-    if (GPDMA_IntGetStatus(GPDMA_INTTC, GPDMA_CHANNEL_1)) {
+    if (GPDMA_IntGetStatus(GPDMA_STAT_INTTC, 1)) {
         float valor = calcularRMS(buffer_adc);
         char texto[32];
         sprintf(texto, "RMS: %.2f\r\n", valor);
         enviarUART(texto);
 
-        GPDMA_ClearIntPending(GPDMA_INTTC, GPDMA_CHANNEL_1);
+        GPDMA_ClearIntPending(GPDMA_STATCLR_INTTC, 1);
     }
 }
 
