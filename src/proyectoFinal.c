@@ -68,7 +68,7 @@ int main(void){
 	llenar_sin();
 	llenar_triangular();
 	llenar_sierra();
-	llenar_cuadrada();
+	//llenar_cuadrada();
 	configPCB();
 	configADC();
 	configDAC();
@@ -264,6 +264,7 @@ void configDMA0(void){
 	GPDMA_Setup(&dma0);
 }
 
+/*
 void configDMA1(void){
 	GPDMA_Channel_CFG_Type dma1={0};
 	GPDMA_LLI_Type lli1={0};
@@ -285,6 +286,7 @@ void configDMA1(void){
 
 	GPDMA_Setup(&dma1);
 }
+*/
 
 void configDMA2(void){
 	GPDMA_Channel_CFG_Type dma2={0};
@@ -363,9 +365,9 @@ void EINT0_IRQHandler(void){
 
 	switch (contador){
 		case 1: configDMA0(); break;
-		case 2: configDMA1(); break;
-		case 3: configDMA2(); break;
-		case 4: configDMA3(); break;
+		//case 2: configDMA1(); break;
+		case 2: configDMA2(); break;
+		case 3: configDMA3(); break;
 		default: configDMA0(); break;
 	}
 
