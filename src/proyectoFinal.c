@@ -1,5 +1,6 @@
 #include <LPC17xx.h>
 #include <stdio.h>
+#include <math.h>
 #include "lpc17xx_gpio.h"
 #include "lpc17xx_pinsel.h"
 #include "lpc17xx_dac.h"
@@ -47,7 +48,7 @@ void llenar_triangular(void);
 void llenar_sierra(void);
 void llenar_cuadrada(void);
 float calcularRMS(uint16_t buffer[BUFFER_SIZE]);
-void enviarUART(char cadena[MAX_LENGTH]);
+void enviarUART(char *cadena);
 
 //buffer con valores convertidos por el ADC
 uint16_t buffer_adc[BUFFER_SIZE];
@@ -316,7 +317,7 @@ void UART0_SendByte(char c) {
     LPC_UART0->THR = c;
 }
 
-void enviarUART(char cadena[MAX_LENGTH]) {
+void enviarUART(char *cadena) {
     uint32_t i = 0;
     while (cadena[i] != '\0') {
         UART0_SendByte(cadena[i]);
@@ -375,14 +376,6 @@ void TIMER0_IRQHandler(void) {
     }
 }
 
-float sqrtAprox(float x) {
-    if (x <= 0.0f) return 0.0f;
-    float res = x;
-    for (int i = 0; i < 20; i++) {
-        res = 0.5f * (res + x / res);
-    }
-    return res;
-}
 
 float calcularRMS(uint16_t buffer[BUFFER_SIZE]) {
     float suma = 0.0f;
@@ -392,7 +385,7 @@ float calcularRMS(uint16_t buffer[BUFFER_SIZE]) {
     }
 
     float promedio = suma / BUFFER_SIZE;
-    float rms = sqrtAprox(promedio);
+    float rms = sqrt(promedio);
     return rms;
 }
 
