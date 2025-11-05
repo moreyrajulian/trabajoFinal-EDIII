@@ -31,6 +31,11 @@
 #define FRECUENCIA_3 5000
 #define FRECUENCIA_4 10000
 #define MAX_LENGTH 256
+#define SIZE_SIERRA 1024
+#define SIZE_TRIANGULAR 2048
+#define PI 3.141592653589793
+#define DAC_RESOLUTION 1024
+#define SIZE_SIN 2048
 
 void configPCB(void);
 void configADC(void);
@@ -46,7 +51,6 @@ void configDMA_ADC(void);
 void llenar_sin(void);
 void llenar_triangular(void);
 void llenar_sierra(void);
-void llenar_cuadrada(void);
 float calcularRMS(uint16_t buffer[BUFFER_SIZE]);
 void enviarUART(char *cadena);
 
@@ -54,10 +58,9 @@ void enviarUART(char *cadena);
 uint16_t buffer_adc[BUFFER_SIZE];
 
 //buffers para generar las 4 señales mediante software
-const uint16_t buffer_sin[BUFFER_SIZE];
-const uint16_t buffer_triangular[BUFFER_SIZE];
-const uint16_t buffer_sierra[BUFFER_SIZE];
-const uint16_t buffer_cuadrada[BUFFER_SIZE];
+uint16_t buffer_sin[SIZE_SIN];
+uint16_t buffer_triangular[SIZE_TRIANGULAR];
+uint16_t buffer_sierra[SIZE_SIERRA];
 
 volatile uint32_t RMS=0;
 
@@ -80,6 +83,33 @@ int main(void){
 	while(1){
 		__WFI();
 	}
+}
+
+void llenar_triangular(){
+	uint16_t k=0;
+	for(int i = 0; i<1024; i++){
+		buffer_triangular[k++]=i;
+	}
+	for (int i = 1023 - 1; i >= 0; i--) {
+		buffer_triangular[k++]=i;
+	}
+}
+
+void llenar_sierra(){
+	for(int i = 0; i<1024; i++){
+		buffer_sierra[i]=i;
+	}
+}
+
+void llenar_sin(){
+    double amplitude = (DAC_RESOLUTION - 1) / 2.0;  // 511.5
+    double offset = amplitude;                      // 511.5
+    double step = 2.0 * PI / (double)SIZE_SIN;
+
+    for (uint16_t i = 0; i < SIZE_SIN; i++) {
+        double valor = offset + amplitude * sin(i * step);
+        buffer_sin[i] = (uint16_t)(valor + 0.5);    // redondeo
+    }
 }
 
 void configTIMER0(void) {
