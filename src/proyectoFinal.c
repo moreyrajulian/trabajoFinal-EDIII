@@ -58,35 +58,39 @@ void enviarUART(char *cadena);
 uint16_t buffer_adc[BUFFER_SIZE];
 
 //buffers para generar las 4 señales mediante software
-uint16_t buffer_sin[SIZE_SIN];
-uint16_t buffer_triangular[SIZE_TRIANGULAR];
-uint16_t buffer_sierra[SIZE_SIERRA];
+uint32_t buffer_sin[SIZE_SIN];
+uint32_t buffer_triangular[SIZE_TRIANGULAR];
+uint32_t buffer_sierra[SIZE_SIERRA];
+
+GPDMA_Channel_CFG_Type dma2;
 
 volatile uint32_t RMS=0;
 
 int main(void){
-	llenar_sin();
-	llenar_triangular();
-	llenar_sierra();
+	//llenar_sin();
+	//llenar_sierra();
 	//llenar_cuadrada();
 	configPCB();
-	configADC();
+	//configADC();
 	configDAC();
-	configUART();
-	configEINT();
-	configDMA_ADC();
-	GPDMA_Init();
+	llenar_triangular();
+	//configUART();
+	//configEINT();
+	//configDMA_ADC();
+	configDMA2();
 	GPDMA_ChannelCmd(0,ENABLE);
-	GPDMA_ChannelCmd(1,ENABLE);
-	configTIMER0();
+	//GPDMA_ChannelCmd(1,ENABLE);
+	//configTIMER0();
+
+
 
 	while(1){
-		__WFI();
+		//__WFI();
 	}
 }
 
 void llenar_triangular(){
-	uint16_t k=0;
+	uint32_t k=0;
 	for(int i = 0; i<1024; i++){
 		buffer_triangular[k++]=i;
 	}
@@ -154,12 +158,13 @@ void configPCB(void){
 	adc0.Portnum=0;
 	adc0.Pinnum=23;
 	adc0.Funcnum=1;
-	adc0.Pinmode=PINSEL_PINMODE_TRISTATE;
+	adc0.Pinmode=0;
 
 	dac0.Portnum=0;
-	dac0.Pinnum=18;
-	dac0.Funcnum=1;
-	dac0.Pinmode=PINSEL_PINMODE_TRISTATE;
+	dac0.OpenDrain = 0;
+	dac0.Pinnum=26;
+	dac0.Funcnum=2;
+	dac0.Pinmode=0;
 
 	eint0.Portnum=2;
 	eint0.Pinnum=10;
@@ -200,28 +205,32 @@ void configEINT(void){
 void configADC(void){
 	ADC_Init(LPC_ADC,200000);
 	ADC_BurstCmd(LPC_ADC,ENABLE);
-	ADC_StartCmd(LPC_ADC,ADC_START_CONTINUOUS);
+	//ADC_StartCmd(LPC_ADC,ADC_START_CONTINUOUS);
 	ADC_ChannelCmd(LPC_ADC,0,ENABLE);
-	ADC_IntConfig(LPC_ADC,ADC_ADINTEN0,ENABLE);
-	NVIC_EnableIRQ(ADC_IRQn);
+	//ADC_IntConfig(LPC_ADC,ADC_ADINTEN0,ENABLE);
+	//NVIC_EnableIRQ(ADC_IRQn);
 }
 
-void configDAC(void){
-	DAC_CONVERTER_CFG_Type dac={0};
+void configDAC(void) {
+    DAC_CONVERTER_CFG_Type dac = {0};
 
-	dac.DBLBUF_ENA=1;
-	dac.CNT_ENA=1;
-	dac.DMA_ENA=1;
+    dac.CNT_ENA = 1;
+    dac.DMA_ENA = 1;
 
-	DAC_Init(LPC_DAC);
-	DAC_SetBias(LPC_DAC,0);
-	DAC_ConfigDAConverterControl(LPC_DAC,&dac);
-	DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_0*MUESTRAS_DAC))-1); //dependerá de la frecuencia de la onda que querramos
+    DAC_Init(LPC_DAC); //
+
+    DAC_SetDMATimeOut(LPC_DAC, 30000);
+
+    DAC_ConfigDAConverterControl(LPC_DAC, &dac);
+    return;
+    //DAC_SetDMATimeOut(LPC_DAC, (PCLK_DAC / (FRECUENCIA_0 * MUESTRAS_DAC)) - 1);
+
 }
+
 
 void configDMA_ADC(void){
-	GPDMA_Channel_CFG_Type dma_adc={0};
-	GPDMA_LLI_Type lli_adc={0};
+	GPDMA_Channel_CFG_Type dma_adc;
+	GPDMA_LLI_Type lli_adc;
 
 	dma_adc.ChannelNum=1;
 	dma_adc.TransferSize=TRANSFER_SIZE;
@@ -233,10 +242,12 @@ void configDMA_ADC(void){
 	dma_adc.DstConn=0;
 	dma_adc.DMALLI=(uint32_t)&lli_adc;
 
-	lli_adc.SrcAddr=0;
+	lli_adc.SrcAddr=(uint32_t)&(LPC_ADC -> ADDR0);
 	lli_adc.DstAddr=(uint32_t)&buffer_adc;
 	lli_adc.NextLLI=(uint32_t)&lli_adc;
 	lli_adc.Control=TRANSFER_SIZE|(1<<18)|(1<<21)|(1<<24)|(1<<31);
+	GPDMA_Init();
+
 
 	GPDMA_Setup(&dma_adc);
 	NVIC_EnableIRQ(DMA_IRQn);
@@ -249,7 +260,7 @@ void configDMA0(void){
 	dma0.ChannelNum=0;
 	dma0.TransferSize=TRANSFER_SIZE;
 	dma0.TransferWidth=GPDMA_WIDTH_HALFWORD;
-	dma0.SrcMemAddr=(uint32_t)&buffer_sin;
+	dma0.SrcMemAddr=(uint32_t)buffer_sin;
 	dma0.DstMemAddr=0;
 	dma0.TransferType=GPDMA_TRANSFERTYPE_M2P;
 	dma0.SrcConn=0;
@@ -257,9 +268,12 @@ void configDMA0(void){
 	dma0.DMALLI=(uint32_t)&lli0;
 
 	lli0.SrcAddr=(uint32_t)&buffer_sin;
-	lli0.DstAddr=0;
+	lli0.DstAddr=(uint32_t)&(LPC_DAC->DACR);
 	lli0.NextLLI=(uint32_t)&lli0;
-	lli0.Control=TRANSFER_SIZE|(1<<18)|(1<<21)|(1<<24)|(1<<31);
+	lli0.Control=TRANSFER_SIZE|(1<<18)|(1<<21)|(1<<26)|(1<<31);
+
+	GPDMA_Init();
+
 
 	GPDMA_Setup(&dma0);
 }
@@ -289,25 +303,25 @@ void configDMA1(void){
 */
 
 void configDMA2(void){
-	GPDMA_Channel_CFG_Type dma2={0};
-	GPDMA_LLI_Type lli2={0};
+	GPDMA_LLI_Type lli2;
+
+	lli2.SrcAddr=(uint32_t)buffer_triangular;
+	lli2.DstAddr=(uint32_t)&(LPC_DAC->DACR);
+	lli2.NextLLI=(uint32_t)&lli2;
+	lli2.Control=60|(2<<18)|(2<<21)|(1<<26);
+	GPDMA_Init();
 
 	dma2.ChannelNum=0;
-	dma2.TransferSize=4095;
-	dma2.TransferWidth=GPDMA_WIDTH_HALFWORD;
-	dma2.SrcMemAddr=(uint32_t)&buffer_triangular;
+	dma2.SrcMemAddr=(uint32_t)buffer_triangular;
 	dma2.DstMemAddr=0;
+	dma2.TransferSize=60;
+	dma2.TransferWidth=0;
 	dma2.TransferType=GPDMA_TRANSFERTYPE_M2P;
 	dma2.SrcConn=0;
 	dma2.DstConn=GPDMA_CONN_DAC;
 	dma2.DMALLI=(uint32_t)&lli2;
-
-	lli2.SrcAddr=(uint32_t)&buffer_triangular;
-	lli2.DstAddr=0;
-	lli2.NextLLI=(uint32_t)&lli2;
-	lli2.Control=TRANSFER_SIZE|(1<<18)|(1<<21)|(1<<24)|(1<<31);
-
 	GPDMA_Setup(&dma2);
+	return;
 }
 
 void configDMA3(void){
@@ -317,7 +331,7 @@ void configDMA3(void){
 	dma3.ChannelNum=0;
 	dma3.TransferSize=4095;
 	dma3.TransferWidth=GPDMA_WIDTH_HALFWORD;
-	dma3.SrcMemAddr=(uint32_t)&buffer_sierra;
+	dma3.SrcMemAddr=(uint32_t)buffer_sierra;
 	dma3.DstMemAddr=0;
 	dma3.TransferType=GPDMA_TRANSFERTYPE_M2P;
 	dma3.SrcConn=0;
@@ -325,9 +339,12 @@ void configDMA3(void){
 	dma3.DMALLI=(uint32_t)&lli3;
 
 	lli3.SrcAddr=(uint32_t)&buffer_sierra;
-	lli3.DstAddr=0;
+	lli3.DstAddr=(uint32_t)&(LPC_DAC->DACR);
 	lli3.NextLLI=(uint32_t)&lli3;
-	lli3.Control=TRANSFER_SIZE|(1<<18)|(1<<21)|(1<<24)|(1<<31);
+	lli3.Control=TRANSFER_SIZE|(1<<18)|(1<<21)|(1<<26)|(1<<31);
+
+	GPDMA_Init();
+
 
 	GPDMA_Setup(&dma3);
 }
