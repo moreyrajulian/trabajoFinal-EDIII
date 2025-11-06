@@ -66,6 +66,12 @@ GPDMA_Channel_CFG_Type dma1;
 GPDMA_Channel_CFG_Type dma2;
 GPDMA_Channel_CFG_Type dma_adc;
 
+GPDMA_LLI_Type lli0;
+GPDMA_LLI_Type lli1;
+GPDMA_LLI_Type lli2;
+GPDMA_LLI_Type lli2;
+GPDMA_LLI_Type lli_adc;
+
 volatile uint32_t RMS=0;
 volatile uint8_t onda=0;
 
@@ -79,7 +85,7 @@ int main(void){
 	//configUART();
 	configEINT();
 	//configDMA_ADC();
-	//GPDMA_Init();
+	GPDMA_Init();
 	configDMA0();
 	GPDMA_ChannelCmd(0,ENABLE);
 	//GPDMA_ChannelCmd(1,ENABLE);
@@ -198,6 +204,8 @@ void configEINT(void){
 	EXTI_Init();
 	EXTI_Config(&eint0);
 	EXTI_Config(&eint1);
+	EXTI_ClearEXTIFlag(EXTI_EINT0);
+	EXTI_ClearEXTIFlag(EXTI_EINT1);
 	NVIC_EnableIRQ(EINT0_IRQn);
 	NVIC_EnableIRQ(EINT1_IRQn);
 }
@@ -223,17 +231,17 @@ void configDAC(void) {
 }
 
 void configDMA_ADC(void){
-	GPDMA_LLI_Type lli_adc;
+	//GPDMA_LLI_Type lli_adc;
 
 	lli_adc.SrcAddr=(uint32_t)&(LPC_ADC -> ADDR0);
 	lli_adc.DstAddr=(uint32_t)&buffer_adc;
 	lli_adc.NextLLI=(uint32_t)&lli_adc;
 	lli_adc.Control=TRANSFER_SIZE_ADC|(1<<18)|(1<<21)|(1<<24)|(1<<31);
-	GPDMA_Init();
+	//GPDMA_Init();
 
 	dma_adc.ChannelNum=1;
 	dma_adc.TransferSize=TRANSFER_SIZE_ADC;
-	dma_adc.TransferWidth=GPDMA_WIDTH_HALFWORD;
+	dma_adc.TransferWidth=0;
 	dma_adc.SrcMemAddr=0;
 	dma_adc.DstMemAddr=(uint32_t)&buffer_adc;
 	dma_adc.TransferType=GPDMA_TRANSFERTYPE_P2M;
@@ -246,17 +254,17 @@ void configDMA_ADC(void){
 }
 
 void configDMA0(void){
-	GPDMA_LLI_Type lli0;
+	//GPDMA_LLI_Type lli0;
 
 	lli0.SrcAddr=(uint32_t)&buffer_sin;
 	lli0.DstAddr=(uint32_t)&(LPC_DAC->DACR);
 	lli0.NextLLI=(uint32_t)&lli0;
 	lli0.Control=SIZE_SIN|(2<<18)|(2<<21)|(1<<26);
-	GPDMA_Init();
+	//GPDMA_Init();
 
 	dma0.ChannelNum=0;
 	dma0.TransferSize=SIZE_SIN;
-	dma0.TransferWidth=GPDMA_WIDTH_HALFWORD;
+	dma0.TransferWidth=0;
 	dma0.SrcMemAddr=(uint32_t)buffer_sin;
 	dma0.DstMemAddr=0;
 	dma0.TransferType=GPDMA_TRANSFERTYPE_M2P;
@@ -269,13 +277,13 @@ void configDMA0(void){
 }
 
 void configDMA1(void){
-	GPDMA_LLI_Type lli1;
+	//GPDMA_LLI_Type lli1;
 
 	lli1.SrcAddr=(uint32_t)buffer_triangular;
 	lli1.DstAddr=(uint32_t)&(LPC_DAC->DACR);
 	lli1.NextLLI=(uint32_t)&lli1;
 	lli1.Control=SIZE_TRIANGULAR|(2<<18)|(2<<21)|(1<<26);
-	GPDMA_Init();
+	//GPDMA_Init();
 
 	dma1.ChannelNum=0;
 	dma1.SrcMemAddr=(uint32_t)buffer_triangular;
@@ -292,13 +300,13 @@ void configDMA1(void){
 }
 
 void configDMA2(void){
-	GPDMA_LLI_Type lli2;
+	//GPDMA_LLI_Type lli2;
 
 	lli2.SrcAddr=(uint32_t)&buffer_sierra;
 	lli2.DstAddr=(uint32_t)&(LPC_DAC->DACR);
 	lli2.NextLLI=(uint32_t)&lli2;
 	lli2.Control=SIZE_SIERRA|(2<<18)|(2<<21)|(1<<26);
-	GPDMA_Init();
+	//GPDMA_Init();
 
 	dma2.ChannelNum=0;
 	dma2.TransferSize=SIZE_SIERRA;
