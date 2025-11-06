@@ -355,9 +355,9 @@ void EINT0_IRQHandler(void){
 	GPDMA_ChannelCmd(0, DISABLE);
 
 	switch (contador){
-		case 1: configDMA0(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_0*SIZE_SIN))-1); onda=0; break;
-		case 2: configDMA1(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_0*SIZE_TRIANGULAR))-1); onda=1; break;
-		case 3: configDMA2(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_0*SIZE_SIERRA))-1); onda= 2; break;
+		case 0: configDMA0(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_0*SIZE_SIN))-1); onda=0; break;
+		case 1: configDMA1(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_0*SIZE_TRIANGULAR))-1); onda=1; break;
+		case 2: configDMA2(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_0*SIZE_SIERRA))-1); onda= 2; break;
 		default: configDMA0(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_0*SIZE_SIN))-1); onda=0; break;
 	}
 
@@ -373,10 +373,10 @@ void EINT1_IRQHandler(void){
 	contador=(contador+1)%FRECUENCIAS;
 
 	switch (contador){
-		case 1: frecuencia= 1500; break;
-		case 2: frecuencia= 2500; break;
-		case 3: frecuencia= 5000; break;
-		case 4: frecuencia= 10000; break;
+		case 0: frecuencia= 1500; break;
+		case 1: frecuencia= 2500; break;
+		case 2: frecuencia= 5000; break;
+		case 3: frecuencia= 10000; break;
 		default: frecuencia= 1000; break;
 	}
 
@@ -420,7 +420,3 @@ float calcularRMS(uint16_t buffer[BUFFER_SIZE]) {
     float rms = sqrt(promedio);
     return rms;
 }
-
-
-
-
