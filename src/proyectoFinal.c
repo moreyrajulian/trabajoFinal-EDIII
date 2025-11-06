@@ -37,6 +37,10 @@
 #define DAC_RESOLUTION 1024
 #define SIZE_SIN 2048
 
+#define FRECUENCIA_MAX_2048_MUESTRAS 480
+#define FRECUENCIA_MAX_1024_MUESTRAS 950
+
+
 void configPCB(void);
 void configADC(void);
 void configDAC(void);
@@ -50,11 +54,11 @@ void configDMA_ADC(void);
 void llenar_sin(void);
 void llenar_triangular(void);
 void llenar_sierra(void);
-float calcularRMS(uint16_t buffer[BUFFER_SIZE]);
+float calcularRMS(uint32_t buffer[BUFFER_SIZE]);
 void enviarUART(char *cadena);
 
 //buffer con valores convertidos por el ADC
-uint16_t buffer_adc[BUFFER_SIZE];
+uint32_t buffer_adc[BUFFER_SIZE];
 
 //buffers para generar las 4 señales mediante software
 uint32_t buffer_sin[SIZE_SIN];
@@ -223,7 +227,7 @@ void configDAC(void) {
     dac.DMA_ENA = 1;
 
     DAC_Init(LPC_DAC);
-    DAC_SetDMATimeOut(LPC_DAC, 12);
+    DAC_SetDMATimeOut(LPC_DAC, 24);
     DAC_ConfigDAConverterControl(LPC_DAC, &dac);
     return;
     //DAC_SetDMATimeOut(LPC_DAC, (PCLK_DAC / (FRECUENCIA_0 * MUESTRAS_DAC)) - 1);
@@ -236,14 +240,14 @@ void configDMA_ADC(void){
 	lli_adc.SrcAddr=(uint32_t)&(LPC_ADC -> ADDR0);
 	lli_adc.DstAddr=(uint32_t)&buffer_adc;
 	lli_adc.NextLLI=(uint32_t)&lli_adc;
-	lli_adc.Control=TRANSFER_SIZE_ADC|(1<<18)|(1<<21)|(1<<24)|(1<<31);
+	lli_adc.Control=TRANSFER_SIZE_ADC|(2<<18)|(2<<21)|(1<<27)|(1<<31);
 	//GPDMA_Init();
 
 	dma_adc.ChannelNum=1;
 	dma_adc.TransferSize=TRANSFER_SIZE_ADC;
 	dma_adc.TransferWidth=0;
 	dma_adc.SrcMemAddr=0;
-	dma_adc.DstMemAddr=(uint32_t)&buffer_adc;
+	dma_adc.DstMemAddr=(uint32_t)buffer_adc;
 	dma_adc.TransferType=GPDMA_TRANSFERTYPE_P2M;
 	dma_adc.SrcConn=GPDMA_CONN_ADC;
 	dma_adc.DstConn=0;
@@ -355,10 +359,10 @@ void EINT0_IRQHandler(void){
 	GPDMA_ChannelCmd(0, DISABLE);
 
 	switch (contador){
-		case 0: configDMA0(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_0*SIZE_SIN))-1); onda=0; break;
-		case 1: configDMA1(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_0*SIZE_TRIANGULAR))-1); onda=1; break;
-		case 2: configDMA2(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_0*SIZE_SIERRA))-1); onda= 2; break;
-		default: configDMA0(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_0*SIZE_SIN))-1); onda=0; break;
+		case 0: configDMA0(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_2048_MUESTRAS*SIZE_SIN))-1); onda=0; break;
+		case 1: configDMA1(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_2048_MUESTRAS*SIZE_TRIANGULAR))-1); onda=1; break;
+		case 2: configDMA2(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_1024_MUESTRAS*SIZE_SIERRA))-1); onda= 2; break;
+		default: configDMA0(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_2048_MUESTRAS*SIZE_SIN))-1); onda=0; break;
 	}
 
 	GPDMA_ChannelCmd(0, ENABLE);    // reactiva el canal con la nueva configuración
@@ -369,14 +373,14 @@ void EINT0_IRQHandler(void){
 void EINT1_IRQHandler(void){
 	static uint8_t contador=0;
 	static uint32_t frecuencia=0;
-
 	contador=(contador+1)%FRECUENCIAS;
+	GPDMA_ChannelCmd(1, DISABLE);
 
 	switch (contador){
-		case 0: frecuencia= 1500; break;
-		case 1: frecuencia= 2500; break;
-		case 2: frecuencia= 5000; break;
-		case 3: frecuencia= 10000; break;
+		case 0: frecuencia= 100; break;
+		case 1: frecuencia= 250; break;
+		case 2: frecuencia= 350; break;
+		case 3: frecuencia= 50; break;
 		default: frecuencia= 1000; break;
 	}
 
@@ -386,6 +390,8 @@ void EINT1_IRQHandler(void){
 		case 2: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(frecuencia*SIZE_SIERRA))-1); break;
 		default: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(frecuencia*SIZE_SIN))-1); break;
 	}
+
+	GPDMA_ChannelCmd(1, ENABLE);
 
 	EXTI_ClearEXTIFlag(EXTI_EINT1);
 }
@@ -409,7 +415,7 @@ void TIMER0_IRQHandler(void) {
 }
 
 
-float calcularRMS(uint16_t buffer[BUFFER_SIZE]) {
+float calcularRMS(uint32_t buffer[BUFFER_SIZE]) {
     float suma = 0.0f;
     for (uint32_t i = 0; i < BUFFER_SIZE; i++) {
         float val = (float)buffer[i];
