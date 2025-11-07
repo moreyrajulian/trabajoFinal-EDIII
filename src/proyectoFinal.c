@@ -10,6 +10,8 @@
 #include "lpc17xx_uart.h"
 #include "lpc17xx_exti.h"
 
+#define VREF 3.3f
+
 #define BUFFER_SIZE 1024
 
 #define PCLK_DAC 25000000
@@ -110,6 +112,7 @@ int main(void){
 		}
 
 		if(flagCambiarFrec){
+
 			contador1=(contador1+1)%FRECUENCIAS;
 
 			switch (contador1){
@@ -158,30 +161,52 @@ void llenar_sin(){
 }
 
 void configTIMER0(void) {
-    TIM_TIMERCFG_Type struct_config;
-    TIM_MATCHCFG_Type struct_match;
+    TIM_TIMERCFG_Type timer0_conf;
+    TIM_MATCHCFG_Type timer0_match;
+
+    TIM_TIMERCFG_Type timer1_conf;
+    TIM_MATCHCFG_Type timer1_match;
 
     // --- Configuración base ---
-    struct_config.PrescaleOption = TIM_PRESCALE_TICKVAL;
-    struct_config.PrescaleValue  = 1;  // Incrementa cada 1 µs
+    timer0_conf.PrescaleOption = TIM_PRESCALE_TICKVAL;
+    timer0_conf.PrescaleValue  = 1;  // Incrementa cada 1 µs
 
     // --- Configuración del match ---
-    struct_match.MatchChannel        = 0;
-    struct_match.IntOnMatch          = ENABLE;
-    struct_match.ResetOnMatch        = ENABLE;
-    struct_match.StopOnMatch         = DISABLE;
-    struct_match.ExtMatchOutputType  = TIM_EXTMATCH_NOTHING;
-    struct_match.MatchValue          = 1000000;  // 1 segundo
+    timer0_match.MatchChannel        = 0;
+    timer0_match.IntOnMatch          = ENABLE;
+    timer0_match.ResetOnMatch        = ENABLE;
+    timer0_match.StopOnMatch         = DISABLE;
+    timer0_match.ExtMatchOutputType  = TIM_EXTMATCH_NOTHING;
+    timer0_match.MatchValue          = 2500000;  // 100 mili segundo
+
+    // --- Configuración base ---
+	timer1_conf.PrescaleOption = TIM_PRESCALE_TICKVAL;
+	timer1_conf.PrescaleValue  = 1;  // Incrementa cada 1 µs
+
+	// --- Configuración del match ---
+	timer1_match.MatchChannel        = 1;
+	timer1_match.IntOnMatch          = DISABLE;
+	timer1_match.ResetOnMatch        = ENABLE;
+	timer1_match.StopOnMatch         = DISABLE;
+	timer1_match.ExtMatchOutputType  = TIM_EXTMATCH_TOGGLE;
+	timer1_match.MatchValue          = 250000;  // 10 mili segundo
+
+
 
     // --- Inicializar y configurar timer ---
-    TIM_Init(LPC_TIM0, TIM_TIMER_MODE, &struct_config);
-    TIM_ConfigMatch(LPC_TIM0, &struct_match);
-
+    TIM_Init(LPC_TIM0, TIM_TIMER_MODE, &timer0_conf);
+    TIM_Init(LPC_TIM1, TIM_TIMER_MODE, &timer1_conf);
+    TIM_ConfigMatch(LPC_TIM0, &timer0_match);
+    TIM_ConfigMatch(LPC_TIM1, &timer1_match);
+    TIM_Cmd(LPC_TIM0, ENABLE);
+    TIM_Cmd(LPC_TIM1, ENABLE);
     // --- Habilitar interrupción ---
+	NVIC_SetPriority(TIMER0_IRQn, (4));
+
     NVIC_EnableIRQ(TIMER0_IRQn);
 
     // --- Iniciar timer ---
-    TIM_Cmd(LPC_TIM0, ENABLE);
+
 }
 
 void configPCB(void){
@@ -240,14 +265,23 @@ void configEINT(void){
 	EXTI_Config(&eint1);
 	EXTI_ClearEXTIFlag(EXTI_EINT0);
 	EXTI_ClearEXTIFlag(EXTI_EINT1);
+
+	NVIC_SetPriority(EINT0_IRQn, (0));
+	NVIC_SetPriority(EINT1_IRQn, (0));
+
 	NVIC_EnableIRQ(EINT0_IRQn);
 	NVIC_EnableIRQ(EINT1_IRQn);
+
 }
 
 void configADC(void){
 	ADC_Init(LPC_ADC,200000);
-	ADC_BurstCmd(LPC_ADC,ENABLE);
+	ADC_StartCmd(LPC_ADC, ADC_START_ON_MAT11);
+	ADC_EdgeStartConfig(LPC_ADC, ADC_START_ON_RISING);
+	ADC_IntConfig(LPC_ADC, ADC_ADINTEN0, ENABLE);
 	ADC_ChannelCmd(LPC_ADC,0,ENABLE);
+	NVIC_SetPriority(ADC_IRQn, (9));
+	NVIC_EnableIRQ(ADC_IRQn);
 }
 
 void configDAC(void) {
@@ -348,13 +382,11 @@ void enviarUART(char *cadena) {
 
 void EINT0_IRQHandler(void){
 	flagCambiarOnda = 1;
-
 	EXTI_ClearEXTIFlag(EXTI_EINT0);
 }
 
 void EINT1_IRQHandler(void){
 	flagCambiarFrec = 1;
-
 	EXTI_ClearEXTIFlag(EXTI_EINT1);
 }
 
@@ -366,17 +398,32 @@ void TIMER0_IRQHandler(void) {
         enviarUART(texto);
         TIM_ClearIntPending(LPC_TIM0, TIM_MR0_INT);
     }
+
+    //printf("Holis, interrumpio el timer");
+
+}
+
+void ADC_IRQHandler(){
+	static int i = 0;
+	i=(i+1)%BUFFER_SIZE;
+	buffer_adc[i] = ADC_ChannelGetData(LPC_ADC, 0);
+	printf("%d | ",buffer_adc[i]);
+	NVIC_ClearPendingIRQ(ADC_IRQn);
 }
 
 
 float calcularRMS(uint16_t buffer[BUFFER_SIZE]) {
     float suma = 0.0f;
+
     for (uint16_t i = 0; i < BUFFER_SIZE; i++) {
-        float val = (float)(buffer[i]>>4 & 0x0FFF);
+        float val = (float)buffer[i];  // Ya es el valor ADC de 0 a 4095
         suma += val * val;
     }
 
-    float promedio = suma / BUFFER_SIZE;
-    float rms = sqrt(promedio);
-    return rms;
+    float rms = sqrt(suma / BUFFER_SIZE);
+
+    float volt_rms = (rms * VREF) / 4095.0f;
+
+    return ;
 }
+
