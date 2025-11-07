@@ -10,36 +10,31 @@
 #include "lpc17xx_uart.h"
 #include "lpc17xx_exti.h"
 
-//medicion true RMS del adc, calcular medicion RMS
-//medir señal analogica RMS, poder meter una t
-//medir valores rms de tension, hasta que frecuencia es valido el valor rms
-//en funcion de la fmuestreo hasta que frecuencia es valido el true rms
 
-//Queiro leer señal de entrada por adc. Guardar en memoria
-// Debo verificar quq ela velocidad de peticion al dma del adc sea más
-// rapida que la del dac al dma. Ya que el dac tiene prioridad por ser canal 0
+#define BUFFER_SIZE 1024 //corroborar
+#define TRANSFER_SIZE_ADC 1024
 
-#define BUFFER_SIZE 2048 //corroborar
 #define PCLK_DAC 25000000
 #define MUESTRAS_DAC 1024
-#define TRANSFER_SIZE_ADC 2047
 #define SIGNALS 3
 #define FRECUENCIAS 4
-#define FRECUENCIA_0 1000
-#define FRECUENCIA_1 1500
-#define FRECUENCIA_2 2500
-#define FRECUENCIA_3 5000
-#define FRECUENCIA_4 10000
-#define MAX_LENGTH 256
+
+#define FRECUENCIA_0 100
+#define FRECUENCIA_1 250
+#define FRECUENCIA_2 350
+#define FRECUENCIA_3 50
+
+
 #define SIZE_SIERRA 1024
 #define SIZE_TRIANGULAR 2048
-#define PI 3.141592653589793
-#define DAC_RESOLUTION 1024
 #define SIZE_SIN 2048
+
+#define PI 3.141592653589793
+
+#define DAC_RESOLUTION 1024
 
 #define FRECUENCIA_MAX_2048_MUESTRAS 480
 #define FRECUENCIA_MAX_1024_MUESTRAS 950
-
 
 void configPCB(void);
 void configADC(void);
@@ -56,15 +51,14 @@ void llenar_triangular(void);
 void llenar_sierra(void);
 float calcularRMS(uint16_t buffer[BUFFER_SIZE]);
 void enviarUART(char *cadena);
-void DMA_DisableChannel_Timeout(uint8_t channel);
 
 //buffer con valores convertidos por el ADC
-static uint16_t buffer_adc[BUFFER_SIZE];
+uint16_t buffer_adc[BUFFER_SIZE];
 
 //buffers para generar las 4 señales mediante software
-static uint16_t buffer_sin[SIZE_SIN];
-static uint16_t buffer_triangular[SIZE_TRIANGULAR];
-static uint16_t buffer_sierra[SIZE_SIERRA];
+uint16_t buffer_sin[SIZE_SIN];
+uint16_t buffer_triangular[SIZE_TRIANGULAR];
+uint16_t buffer_sierra[SIZE_SIERRA];
 
 GPDMA_Channel_CFG_Type dma0;
 GPDMA_Channel_CFG_Type dma1;
@@ -76,26 +70,28 @@ static GPDMA_LLI_Type lli1;
 static GPDMA_LLI_Type lli2;
 static GPDMA_LLI_Type lli_adc;
 
-volatile uint16_t RMS=0;
+volatile uint32_t RMS=0;
 volatile uint8_t onda=0;
 
 int main(void){
+
 	llenar_sin();
 	llenar_triangular();
 	llenar_sierra();
 	configPCB();
-	configADC();
+	//configADC();
 	configDAC();
-	configUART();
+	//configUART();
 	configEINT();
 	GPDMA_Init();
-	configDMA_ADC();
+	//configDMA_ADC();
 	configDMA0();
 	GPDMA_ChannelCmd(0,ENABLE);
 	//GPDMA_ChannelCmd(1,ENABLE);
 	//configTIMER0();
-
+	enviarUART("Hola desde LPC1769, estamos con el José, debuggeando la placa y no anda XD");
 	while(1){
+		//__WFI();
 	}
 }
 
@@ -104,7 +100,7 @@ void llenar_triangular(){
 		buffer_triangular[i]=(i << 6);
 	}
 	for (int i = 1024; i < 2048; i++) {
-		buffer_triangular[i]=((2048-i)<< 6);
+		buffer_triangular[i]=((2047-i)<< 6);
 	}
 }
 
@@ -156,7 +152,7 @@ void configTIMER0(void) {
 void configPCB(void){
 	PINSEL_CFG_Type adc0={0};
 	PINSEL_CFG_Type dac0={0};
-	PINSEL_CFG_Type eint2={0};
+	PINSEL_CFG_Type eint0={0};
 	PINSEL_CFG_Type eint1={0};
 	PINSEL_CFG_Type uart0_tx = {0};
 
@@ -175,10 +171,10 @@ void configPCB(void){
 	dac0.Funcnum=2;
 	dac0.Pinmode=0;
 
-	eint2.Portnum=2;
-	eint2.Pinnum=12;
-	eint2.Funcnum=1;
-	eint2.Pinmode=PINSEL_PINMODE_PULLUP;
+	eint0.Portnum=2;
+	eint0.Pinnum=10;
+	eint0.Funcnum=1;
+	eint0.Pinmode=PINSEL_PINMODE_PULLUP;
 
 	eint1.Portnum=2;
 	eint1.Pinnum=11;
@@ -187,29 +183,29 @@ void configPCB(void){
 
 	PINSEL_ConfigPin(&adc0);
 	PINSEL_ConfigPin(&dac0);
-	PINSEL_ConfigPin(&eint2);
+	PINSEL_ConfigPin(&eint0);
 	PINSEL_ConfigPin(&eint1);
 	PINSEL_ConfigPin(&uart0_tx);
 }
 
 void configEINT(void){
-	EXTI_InitTypeDef eint2={0};
+	EXTI_InitTypeDef eint0={0};
 	EXTI_InitTypeDef eint1={0};
 
-	eint2.EXTI_Line=2;
-	eint2.EXTI_Mode=EXTI_MODE_EDGE_SENSITIVE;
-	eint2.EXTI_polarity=EXTI_POLARITY_LOW_ACTIVE_OR_FALLING_EDGE;
+	eint0.EXTI_Line=0;
+	eint0.EXTI_Mode=EXTI_MODE_EDGE_SENSITIVE;
+	eint0.EXTI_polarity=EXTI_POLARITY_LOW_ACTIVE_OR_FALLING_EDGE;
 
 	eint1.EXTI_Line=1;
 	eint1.EXTI_Mode=EXTI_MODE_EDGE_SENSITIVE;
 	eint1.EXTI_polarity=EXTI_POLARITY_LOW_ACTIVE_OR_FALLING_EDGE;
 
 	EXTI_Init();
-	EXTI_Config(&eint2);
+	EXTI_Config(&eint0);
 	EXTI_Config(&eint1);
-	EXTI_ClearEXTIFlag(EXTI_EINT2);
+	EXTI_ClearEXTIFlag(EXTI_EINT0);
 	EXTI_ClearEXTIFlag(EXTI_EINT1);
-	NVIC_EnableIRQ(EINT2_IRQn);
+	NVIC_EnableIRQ(EINT0_IRQn);
 	NVIC_EnableIRQ(EINT1_IRQn);
 }
 
@@ -239,7 +235,7 @@ void configDMA_ADC(void){
 	lli_adc.SrcAddr=(uint32_t)&(LPC_ADC -> ADDR0);
 	lli_adc.DstAddr=(uint32_t)buffer_adc;
 	lli_adc.NextLLI=(uint32_t)&lli_adc;
-	lli_adc.Control=TRANSFER_SIZE_ADC|(2<<18)|(2<<21)|(1<<27)|(0<<31);
+	lli_adc.Control=TRANSFER_SIZE_ADC|(1<<18)|(2<<21)|(1<<27)|(1<<31);
 	//GPDMA_Init();
 
 	dma_adc.ChannelNum=1;
@@ -252,10 +248,8 @@ void configDMA_ADC(void){
 	dma_adc.DstConn=0;
 	dma_adc.DMALLI=(uint32_t)&lli_adc;
 
-	if(GPDMA_Setup(&dma_adc)){
-		printf("Configuracion exitosa del DMA con ADC\n");
-	}
-	//NVIC_EnableIRQ(DMA_IRQn);
+	GPDMA_Setup(&dma_adc);
+	NVIC_EnableIRQ(DMA_IRQn);
 }
 
 void configDMA0(void){
@@ -328,11 +322,19 @@ void configDMA2(void){
 }
 
 void configUART(){
-	LPC_UART0->LCR = (3 << 0) | (0 << 2) | (0 << 3) | (1 << 6) | (1 << 7);
+    // 1. Habilitar UART0 en PCONP (bit 3)
+    //LPC_SC->PCONP |= (1 << 3);
+
+    // 2. Seleccionar PCLK = CCLK/4 (por defecto suele serlo)
+    //LPC_SC->PCLKSEL0 &= ~(3 << 6); // Bits 7:6 = 00 → CCLK/4
+
+	LPC_UART0->LCR = (3 << 0) | (0 << 2) | (0 << 3) | (1 << 7);
 
 	LPC_UART0->DLM = 0x00;
 	LPC_UART0->DLL = 0xA2;  // 162 decimal
 	LPC_UART0->FDR = (1 << 4) | 0; // MULVAL=1, DIVADDVAL=0
+
+	LPC_UART0->LCR &= ~(1 << 7); // DLAB=0
 
 	LPC_UART0->FCR = 0x07;  // FIFO habilitado y reseteado
 	LPC_UART0->TER = (1 << 7); // Habilitar TX
@@ -345,94 +347,55 @@ void UART0_SendByte(char c) {
 }
 
 void enviarUART(char *cadena) {
-    uint16_t i = 0;
+    uint32_t i = 0;
     while (cadena[i] != '\0') {
         UART0_SendByte(cadena[i]);
         i++;
     }
-    UART0_SendByte('\n');
-    UART0_SendByte('\n');
+    UART0_SendByte('\r');
+    UART0_SendByte('\r');
 }
 
-void DMA_DisableChannel_Timeout(uint8_t channel) {
-    uint32_t mask = (1 << channel);
-    volatile uint32_t *config = &LPC_GPDMACH0->DMACCConfig + (channel * 8); // cada canal tiene offset de 0x20 (8 regs de 4 bytes)
-
-    // 1. Intentar deshabilitar
-    *config &= ~(1 << 0); // Clear Enable bit
-
-    // 2. Esperar con timeout que el canal deje de estar activo
-    uint32_t timeout = 40000000; // ajustar según la velocidad del CPU
-    while (((*config & ((1 << 0) | (1 << 17))) != 0) && timeout--) {
-        __NOP(); // evita optimización y deja respirar al CPU
-    }
-
-    // 3. Si se pasó el timeout, forzar reinicio
-    if (timeout <= 0) {
-        // Forzar reset del canal
-        LPC_GPDMA->DMACIntTCClear = mask;
-        LPC_GPDMA->DMACIntErrClr  = mask;
-
-        // Deshabilitar DMA globalmente
-        LPC_GPDMA->DMACConfig = 0;
-        // Pequeño delay para asegurar que se apague
-        for (volatile int i = 0; i < 1000; i++) __NOP();
-
-    }
-}
-
-
-
-void EINT2_IRQHandler(void){
+void EINT0_IRQHandler(void){
 	static uint8_t contador=0;
 	contador=(contador+1)%SIGNALS;
-	DMA_DisableChannel_Timeout(0);
-	GPDMA_ClearIntPending(GPDMA_STATCLR_INTERR, 0);
-	GPDMA_ClearIntPending(GPDMA_STATCLR_INTTC, 0);
-
-
+	GPDMA_ChannelCmd(0, DISABLE);
 
 	switch (contador){
-		case 0: configDMA0(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_2048_MUESTRAS*SIZE_SIN))-1); onda=0; printf("Onda 0\n");break;
-		case 1: configDMA1(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_2048_MUESTRAS*SIZE_TRIANGULAR))-1); onda=1;printf("Onda 1\n"); break;
-		case 2: configDMA2(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_1024_MUESTRAS*SIZE_SIERRA))-1); onda= 2;printf("Onda 2\n"); break;
-		default: configDMA0(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_2048_MUESTRAS*SIZE_SIN))-1); onda=0;printf("Onda default\n"); break;
+		case 0: configDMA0(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_2048_MUESTRAS*SIZE_SIN))-1); onda=0; break;
+		case 1: configDMA1(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_2048_MUESTRAS*SIZE_TRIANGULAR))-1); onda=1; break;
+		case 2: configDMA2(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_1024_MUESTRAS*SIZE_SIERRA))-1); onda= 2; break;
 	}
 
 	GPDMA_ChannelCmd(0, ENABLE);    // reactiva el canal con la nueva configuración
 
-	EXTI_ClearEXTIFlag(EXTI_EINT2);
+	EXTI_ClearEXTIFlag(EXTI_EINT0);
 }
 
 void EINT1_IRQHandler(void){
 	static uint8_t contador=0;
-	static uint16_t frecuencia=0;
+	static uint32_t frecuencia=0;
 	contador=(contador+1)%FRECUENCIAS;
-	DMA_DisableChannel_Timeout(0);
-	GPDMA_ClearIntPending(GPDMA_STATCLR_INTERR, 0);
-	GPDMA_ClearIntPending(GPDMA_STATCLR_INTTC, 0);
+	//GPDMA_ChannelCmd(0, DISABLE);
 
 	switch (contador){
-		case 0: frecuencia= 100; break;
-		case 1: frecuencia= 250; break;
-		case 2: frecuencia= 350; break;
-		case 3: frecuencia= 50; break;
-		default: frecuencia= 1000; break;
+		case 0: frecuencia= FRECUENCIA_0; break;
+		case 1: frecuencia= FRECUENCIA_1; break;
+		case 2: frecuencia= FRECUENCIA_2; break;
+		case 3: frecuencia= FRECUENCIA_3; break;
 	}
 
 	switch (onda){
 		case 0: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(frecuencia*SIZE_SIN))-1); break;
 		case 1: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(frecuencia*SIZE_TRIANGULAR))-1); break;
 		case 2: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(frecuencia*SIZE_SIERRA))-1); break;
-		default: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(frecuencia*SIZE_SIN))-1); break;
 	}
 
-	GPDMA_ChannelCmd(0, ENABLE);
+	//GPDMA_ChannelCmd(0, ENABLE);
 
 	EXTI_ClearEXTIFlag(EXTI_EINT1);
 }
 
-/*
 void DMA_IRQHandler(void) {
     if (GPDMA_IntGetStatus(GPDMA_STAT_INTTC, 1)) {
         float valor = calcularRMS(buffer_adc);
@@ -443,7 +406,6 @@ void DMA_IRQHandler(void) {
         GPDMA_ClearIntPending(GPDMA_STATCLR_INTTC, 1);
     }
 }
-*/
 
 void TIMER0_IRQHandler(void) {
     if (TIM_GetIntStatus(LPC_TIM0, TIM_MR0_INT)) {
@@ -456,7 +418,7 @@ void TIMER0_IRQHandler(void) {
 float calcularRMS(uint16_t buffer[BUFFER_SIZE]) {
     float suma = 0.0f;
     for (uint16_t i = 0; i < BUFFER_SIZE; i++) {
-        float val = (float)buffer[i];
+        float val = (float)(buffer[i]>>4 & 0x0FFF);
         suma += val * val;
     }
 
