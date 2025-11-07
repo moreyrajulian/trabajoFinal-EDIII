@@ -73,6 +73,9 @@ static GPDMA_LLI_Type lli_adc;
 volatile uint32_t RMS=0;
 volatile uint8_t onda=0;
 
+uint8_t flagCambiarOnda = 0;
+uint8_t flagCambiarFrec = 0;
+
 int main(void){
 
 	llenar_sin();
@@ -81,7 +84,7 @@ int main(void){
 	configPCB();
 	//configADC();
 	configDAC();
-	//configUART();
+	configUART();
 	configEINT();
 	GPDMA_Init();
 	//configDMA_ADC();
@@ -90,8 +93,55 @@ int main(void){
 	//GPDMA_ChannelCmd(1,ENABLE);
 	//configTIMER0();
 	enviarUART("Hola desde LPC1769, estamos con el José, debuggeando la placa y no anda XD");
+
+	uint8_t contador0=0;
+	uint8_t contador1=0;
+	uint32_t frecuencia=0;
+
 	while(1){
-		//__WFI();
+		if(flagCambiarOnda){
+			//printf("Hola desde adentro de cambiar onda\n");
+
+			contador0=(contador0+1)%SIGNALS;
+			GPDMA_ChannelCmd(0, DISABLE);
+
+			switch (contador0){
+				case 0: configDMA0(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_2048_MUESTRAS*SIZE_SIN))-1); onda=0; break;
+				case 1: configDMA1(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_2048_MUESTRAS*SIZE_TRIANGULAR))-1); onda=1; break;
+				case 2: configDMA2(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_1024_MUESTRAS*SIZE_SIERRA))-1); onda= 2; break;
+			}
+
+			flagCambiarOnda = 0;
+
+			LPC_DAC->DACR = 0;
+
+			GPDMA_ChannelCmd(0, ENABLE);    // reactiva el canal con la nueva configuración
+
+		}
+
+		if(flagCambiarFrec){
+			//printf("Hola desde adentro de cambiar frec\n");
+			while(!(LPC_GPDMA->DMACIntTCStat & 0x01));
+			LPC_GPDMA->DMACIntTCClear &= ~(1<<0);
+			contador1=(contador1+1)%FRECUENCIAS;
+
+
+			switch (contador1){
+				case 0: frecuencia= FRECUENCIA_0; break;
+				case 1: frecuencia= FRECUENCIA_1; break;
+				case 2: frecuencia= FRECUENCIA_2; break;
+				case 3: frecuencia= FRECUENCIA_3; break;
+			}
+
+			switch (onda){
+				case 0: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(frecuencia*SIZE_SIN))-1); break;
+				case 1: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(frecuencia*SIZE_TRIANGULAR))-1); break;
+				case 2: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(frecuencia*SIZE_SIERRA))-1); break;
+			}
+
+			flagCambiarFrec = 0;
+		}
+
 	}
 }
 
@@ -357,41 +407,22 @@ void enviarUART(char *cadena) {
 }
 
 void EINT0_IRQHandler(void){
-	static uint8_t contador=0;
-	contador=(contador+1)%SIGNALS;
-	GPDMA_ChannelCmd(0, DISABLE);
 
-	switch (contador){
-		case 0: configDMA0(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_2048_MUESTRAS*SIZE_SIN))-1); onda=0; break;
-		case 1: configDMA1(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_2048_MUESTRAS*SIZE_TRIANGULAR))-1); onda=1; break;
-		case 2: configDMA2(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_1024_MUESTRAS*SIZE_SIERRA))-1); onda= 2; break;
-	}
 
-	GPDMA_ChannelCmd(0, ENABLE);    // reactiva el canal con la nueva configuración
+	flagCambiarOnda = 1;
+
+	//printf("Interrupcion 0");
+
 
 	EXTI_ClearEXTIFlag(EXTI_EINT0);
 }
 
 void EINT1_IRQHandler(void){
-	static uint8_t contador=0;
-	static uint32_t frecuencia=0;
-	contador=(contador+1)%FRECUENCIAS;
-	//GPDMA_ChannelCmd(0, DISABLE);
 
-	switch (contador){
-		case 0: frecuencia= FRECUENCIA_0; break;
-		case 1: frecuencia= FRECUENCIA_1; break;
-		case 2: frecuencia= FRECUENCIA_2; break;
-		case 3: frecuencia= FRECUENCIA_3; break;
-	}
 
-	switch (onda){
-		case 0: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(frecuencia*SIZE_SIN))-1); break;
-		case 1: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(frecuencia*SIZE_TRIANGULAR))-1); break;
-		case 2: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(frecuencia*SIZE_SIERRA))-1); break;
-	}
+	flagCambiarFrec = 1;
 
-	//GPDMA_ChannelCmd(0, ENABLE);
+	//printf("Interrupcion 1");
 
 	EXTI_ClearEXTIFlag(EXTI_EINT1);
 }
