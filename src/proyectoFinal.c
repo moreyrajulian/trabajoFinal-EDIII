@@ -71,7 +71,12 @@ volatile uint8_t onda=0;
 
 uint8_t contador0=0;
 uint8_t contador1=0;
-uint32_t frecuencia=0;
+volatile uint32_t frecuencia=FRECUENCIA_MAX_2048_MUESTRAS;
+const char * const NOMBRES_ONDAS[SIGNALS] = {
+    "SENO",
+    "TRIANGULAR",
+    "SIERRA"
+};
 
 int main(void){
 	llenar_sin();
@@ -136,7 +141,6 @@ void configTIMER0(void) {
     TIM_Cmd(LPC_TIM0, ENABLE);
 	//NVIC_SetPriority(TIMER0_IRQn, (4));
     NVIC_EnableIRQ(TIMER0_IRQn);
-
 }
 
 void configPCB(void){
@@ -177,8 +181,6 @@ void configPCB(void){
 	PINSEL_ConfigPin(&eint0);
 	PINSEL_ConfigPin(&eint1);
 	PINSEL_ConfigPin(&uart3_tx);
-
-
 }
 
 void configEINT(void){
@@ -287,29 +289,14 @@ void configDMA2(void){
 	GPDMA_Setup(&dma2);
 }
 
-/*
-void configUART(){
-	LPC_UART0->LCR = (3 << 0)|(0 << 2)|(0 << 3)|(1 << 7);
-
-	LPC_UART0->DLM = 0x00;
-	LPC_UART0->DLL = 0xA2;  // 162 decimal
-	LPC_UART0->FDR = (1 << 4) | 0; // MULVAL=1, DIVADDVAL=0
-
-	LPC_UART0->LCR &= ~(1 << 7); // DLAB=0
-
-	LPC_UART0->FCR = 0x07;  // FIFO habilitado y reseteado
-	LPC_UART0->TER = (1 << 7); // Habilitar TX
-}
-*/
-
 void EINT0_IRQHandler(void){
 	contador0=(contador0+1)%SIGNALS;
 	GPDMA_ChannelCmd(0, DISABLE);
 
 	switch (contador0){
-		case 0: configDMA0(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_2048_MUESTRAS*SIZE_SIN))-1); onda=0; break;
-		case 1: configDMA1(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_2048_MUESTRAS*SIZE_TRIANGULAR))-1); onda=1; break;
-		case 2: configDMA2(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_1024_MUESTRAS*SIZE_SIERRA))-1); onda= 2; break;
+		case 0: configDMA0(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_2048_MUESTRAS*SIZE_SIN))-1); frecuencia=FRECUENCIA_MAX_2048_MUESTRAS;onda=0;break;
+		case 1: configDMA1(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_2048_MUESTRAS*SIZE_TRIANGULAR))-1);frecuencia=FRECUENCIA_MAX_2048_MUESTRAS; onda=1;break;
+		case 2: configDMA2(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_1024_MUESTRAS*SIZE_SIERRA))-1);frecuencia=FRECUENCIA_MAX_1024_MUESTRAS; onda= 2;break;
 	}
 
 	LPC_DAC->DACR = 0;
@@ -357,8 +344,9 @@ void configUART(void){
 
 void TIMER0_IRQHandler(void) {
 	float valor_rms_volts = calcularRMS();
-    char texto[32];
-    int n = sprintf(texto, "RMS: %.2f V\r\n", valor_rms_volts);
+	const char *nombreOndaActual = NOMBRES_ONDAS[onda];
+    char texto[64];
+    int n = sprintf(texto, "RMS: %.2f V | FRECUENCIA: %lu Hz | ONDA: %s\r\n", valor_rms_volts, frecuencia, nombreOndaActual);
     UART_Send(LPC_UART3, (uint8_t*)texto, (uint32_t)n, BLOCKING);
 	TIM_ClearIntPending(LPC_TIM0, TIM_MR0_INT);
 }
