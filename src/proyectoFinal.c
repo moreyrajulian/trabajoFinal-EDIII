@@ -47,11 +47,11 @@ void configDMA2(void);
 void llenar_sin(void);
 void llenar_triangular(void);
 void llenar_sierra(void);
-float calcularRMS(uint16_t buffer[BUFFER_SIZE]);
+float calcularRMS();
 void enviarUART(char *cadena);
 
 //buffer con valores convertidos por el ADC
-uint16_t buffer_adc[BUFFER_SIZE];
+volatile uint16_t buffer_adc[BUFFER_SIZE];
 
 //buffers para generar las 4 señales mediante software
 uint16_t buffer_sin[SIZE_SIN];
@@ -69,8 +69,14 @@ static GPDMA_LLI_Type lli2;
 volatile uint32_t RMS=0;
 volatile uint8_t onda=0;
 
-uint8_t flagCambiarOnda = 0;
-uint8_t flagCambiarFrec = 0;
+volatile uint8_t flagCambiarOnda = 0;
+volatile uint8_t flagCambiarFrec = 0;
+volatile uint8_t disparar = 1;
+volatile uint16_t cont_ADC = 0;
+
+uint8_t contador0=0;
+uint8_t contador1=0;
+uint32_t frecuencia=0;
 
 int main(void){
 
@@ -88,51 +94,17 @@ int main(void){
 	configTIMER0();
 	enviarUART("Hola desde LPC1769, estamos con el José, debuggeando la placa y no anda XD");
 
-	uint8_t contador0=0;
-	uint8_t contador1=0;
-	uint32_t frecuencia=0;
 
 	while(1){
 
-		if(flagCambiarOnda){
-			contador0=(contador0+1)%SIGNALS;
-			GPDMA_ChannelCmd(0, DISABLE);
-
-			switch (contador0){
-				case 0: configDMA0(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_2048_MUESTRAS*SIZE_SIN))-1); onda=0; break;
-				case 1: configDMA1(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_2048_MUESTRAS*SIZE_TRIANGULAR))-1); onda=1; break;
-				case 2: configDMA2(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_1024_MUESTRAS*SIZE_SIERRA))-1); onda= 2; break;
-			}
-
-			flagCambiarOnda = 0;
-
-			LPC_DAC->DACR = 0;
-
-			GPDMA_ChannelCmd(0, ENABLE);    // reactiva el canal con la nueva configuración
-		}
-
-		if(flagCambiarFrec){
-
-			contador1=(contador1+1)%FRECUENCIAS;
-
-			switch (contador1){
-				case 0: frecuencia= FRECUENCIA_0; break;
-				case 1: frecuencia= FRECUENCIA_1; break;
-				case 2: frecuencia= FRECUENCIA_2; break;
-				case 3: frecuencia= FRECUENCIA_3; break;
-			}
-
-			switch (onda){
-				case 0: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(frecuencia*SIZE_SIN))-1); break;
-				case 1: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(frecuencia*SIZE_TRIANGULAR))-1); break;
-				case 2: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(frecuencia*SIZE_SIERRA))-1); break;
-			}
-
-			flagCambiarFrec = 0;
+		if(disparar){
+			ADC_StartCmd(LPC_ADC, ADC_START_NOW);
+			disparar = 0;
 		}
 
 	}
 }
+
 
 void llenar_triangular(){
 	for(int i = 0; i<1024; i++){
@@ -164,8 +136,8 @@ void configTIMER0(void) {
     TIM_TIMERCFG_Type timer0_conf;
     TIM_MATCHCFG_Type timer0_match;
 
-    TIM_TIMERCFG_Type timer1_conf;
-    TIM_MATCHCFG_Type timer1_match;
+    //TIM_TIMERCFG_Type timer1_conf;
+    //TIM_MATCHCFG_Type timer1_match;
 
     // --- Configuración base ---
     timer0_conf.PrescaleOption = TIM_PRESCALE_TICKVAL;
@@ -177,33 +149,33 @@ void configTIMER0(void) {
     timer0_match.ResetOnMatch        = ENABLE;
     timer0_match.StopOnMatch         = DISABLE;
     timer0_match.ExtMatchOutputType  = TIM_EXTMATCH_NOTHING;
-    timer0_match.MatchValue          = 2500000;  // 100 mili segundo
-
+    timer0_match.MatchValue          = 5000000;  // 100 mili segundo
+/*
     // --- Configuración base ---
 	timer1_conf.PrescaleOption = TIM_PRESCALE_TICKVAL;
 	timer1_conf.PrescaleValue  = 1;  // Incrementa cada 1 µs
 
 	// --- Configuración del match ---
-	timer1_match.MatchChannel        = 1;
-	timer1_match.IntOnMatch          = DISABLE;
+	timer1_match.MatchChannel        = 0;
+	timer1_match.IntOnMatch          = ENABLE;
 	timer1_match.ResetOnMatch        = ENABLE;
 	timer1_match.StopOnMatch         = DISABLE;
 	timer1_match.ExtMatchOutputType  = TIM_EXTMATCH_TOGGLE;
-	timer1_match.MatchValue          = 250000;  // 10 mili segundo
-
-
-
+	timer1_match.MatchValue          = 2500000;  // 100 mili segundo
+*/
     // --- Inicializar y configurar timer ---
     TIM_Init(LPC_TIM0, TIM_TIMER_MODE, &timer0_conf);
-    TIM_Init(LPC_TIM1, TIM_TIMER_MODE, &timer1_conf);
+    //TIM_Init(LPC_TIM1, TIM_TIMER_MODE, &timer1_conf);
     TIM_ConfigMatch(LPC_TIM0, &timer0_match);
-    TIM_ConfigMatch(LPC_TIM1, &timer1_match);
+    //TIM_ConfigMatch(LPC_TIM1, &timer1_match);
     TIM_Cmd(LPC_TIM0, ENABLE);
-    TIM_Cmd(LPC_TIM1, ENABLE);
+    //TIM_Cmd(LPC_TIM1, ENABLE);
     // --- Habilitar interrupción ---
-	NVIC_SetPriority(TIMER0_IRQn, (4));
+	//NVIC_SetPriority(TIMER0_IRQn, (4));
 
     NVIC_EnableIRQ(TIMER0_IRQn);
+
+
 
     // --- Iniciar timer ---
 
@@ -220,13 +192,12 @@ void configPCB(void){
 	uart0_tx.Pinnum = 2;
 	uart0_tx.Funcnum = 1;
 
-	adc0.Portnum=0;
-	adc0.Pinnum=23;
-	adc0.Funcnum=1;
-	adc0.Pinmode=0;
+	adc0.Portnum=1;
+	adc0.Pinnum=31;
+	adc0.Funcnum=3;
+	adc0.Pinmode=PINSEL_PINMODE_TRISTATE;
 
 	dac0.Portnum=0;
-	dac0.OpenDrain = 0;
 	dac0.Pinnum=26;
 	dac0.Funcnum=2;
 	dac0.Pinmode=0;
@@ -246,6 +217,8 @@ void configPCB(void){
 	PINSEL_ConfigPin(&eint0);
 	PINSEL_ConfigPin(&eint1);
 	PINSEL_ConfigPin(&uart0_tx);
+
+
 }
 
 void configEINT(void){
@@ -266,8 +239,8 @@ void configEINT(void){
 	EXTI_ClearEXTIFlag(EXTI_EINT0);
 	EXTI_ClearEXTIFlag(EXTI_EINT1);
 
-	NVIC_SetPriority(EINT0_IRQn, (0));
-	NVIC_SetPriority(EINT1_IRQn, (0));
+	NVIC_SetPriority(EINT0_IRQn, 0);
+	NVIC_SetPriority(EINT1_IRQn, 0);
 
 	NVIC_EnableIRQ(EINT0_IRQn);
 	NVIC_EnableIRQ(EINT1_IRQn);
@@ -275,13 +248,24 @@ void configEINT(void){
 }
 
 void configADC(void){
-	ADC_Init(LPC_ADC,200000);
-	ADC_StartCmd(LPC_ADC, ADC_START_ON_MAT11);
-	ADC_EdgeStartConfig(LPC_ADC, ADC_START_ON_RISING);
-	ADC_IntConfig(LPC_ADC, ADC_ADINTEN0, ENABLE);
-	ADC_ChannelCmd(LPC_ADC,0,ENABLE);
-	NVIC_SetPriority(ADC_IRQn, (9));
-	NVIC_EnableIRQ(ADC_IRQn);
+
+	 	ADC_Init(LPC_ADC, 200000); // 200 kHz de frecuencia ADC
+
+	    // Habilitar canal 0
+	 	ADC_BurstCmd(LPC_ADC,DISABLE);
+	    ADC_ChannelCmd(LPC_ADC,5, ENABLE);
+
+	    // --- Configurar inicio por trigger de TIMER1 MATCH0 ---
+
+	    // --- Configurar flanco de disparo ---
+	    //ADC_EdgeStartConfig(LPC_ADC, ADC_START_ON_RISING);
+
+	    // --- Habilitar interrupción del ADC ---
+	    ADC_IntConfig(LPC_ADC, ADC_ADINTEN5, ENABLE);
+
+	    // --- Configurar NVIC ---
+	    NVIC_SetPriority(ADC_IRQn, 2);
+	    NVIC_EnableIRQ(ADC_IRQn);
 }
 
 void configDAC(void) {
@@ -381,21 +365,52 @@ void enviarUART(char *cadena) {
 }
 
 void EINT0_IRQHandler(void){
-	flagCambiarOnda = 1;
+	contador0=(contador0+1)%SIGNALS;
+	GPDMA_ChannelCmd(0, DISABLE);
+
+	switch (contador0){
+		case 0: configDMA0(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_2048_MUESTRAS*SIZE_SIN))-1); onda=0; break;
+		case 1: configDMA1(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_2048_MUESTRAS*SIZE_TRIANGULAR))-1); onda=1; break;
+		case 2: configDMA2(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_1024_MUESTRAS*SIZE_SIERRA))-1); onda= 2; break;
+	}
+
+	flagCambiarOnda = 0;
+
+	LPC_DAC->DACR = 0;
+
+	GPDMA_ChannelCmd(0, ENABLE);    // reactiva el canal con la nueva configuración
+
 	EXTI_ClearEXTIFlag(EXTI_EINT0);
 }
 
 void EINT1_IRQHandler(void){
-	flagCambiarFrec = 1;
+	contador1=(contador1+1)%FRECUENCIAS;
+
+	switch (contador1){
+		case 0: frecuencia= FRECUENCIA_0; break;
+		case 1: frecuencia= FRECUENCIA_1; break;
+		case 2: frecuencia= FRECUENCIA_2; break;
+		case 3: frecuencia= FRECUENCIA_3; break;
+	}
+
+	switch (onda){
+		case 0: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(frecuencia*SIZE_SIN))-1); break;
+		case 1: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(frecuencia*SIZE_TRIANGULAR))-1); break;
+		case 2: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(frecuencia*SIZE_SIERRA))-1); break;
+	}
+
+
 	EXTI_ClearEXTIFlag(EXTI_EINT1);
 }
 
+
 void TIMER0_IRQHandler(void) {
-    if (TIM_GetIntStatus(LPC_TIM0, TIM_MR0_INT)) {
-        float valor = calcularRMS(buffer_adc);
-        char texto[32];
-        sprintf(texto, "RMS: %.2f\r\n", valor);
-        enviarUART(texto);
+
+	if (TIM_GetIntStatus(LPC_TIM0, TIM_MR0_INT)) {
+        //float valor = calcularRMS();
+        //char texto[32];
+        //sprintf(texto, "RMS: %.2f\r\n", valor);
+        enviarUART((char *)buffer_adc);
         TIM_ClearIntPending(LPC_TIM0, TIM_MR0_INT);
     }
 
@@ -403,20 +418,23 @@ void TIMER0_IRQHandler(void) {
 
 }
 
-void ADC_IRQHandler(){
-	static int i = 0;
-	i=(i+1)%BUFFER_SIZE;
-	buffer_adc[i] = ADC_ChannelGetData(LPC_ADC, 0);
-	printf("%d | ",buffer_adc[i]);
-	NVIC_ClearPendingIRQ(ADC_IRQn);
+void ADC_IRQHandler(void){
+		//printf("entre al handler ADC\n");
+
+		cont_ADC=(cont_ADC+1)%BUFFER_SIZE;
+		//buffer_adc[cont_ADC] = ADC_ChannelGetData(LPC_ADC, 5);
+		buffer_adc[cont_ADC] =cont_ADC;
+		//printf("%d | ",buffer_adc[cont_ADC]);
+		disparar = 1;
+		NVIC_ClearPendingIRQ(ADC_IRQn);
 }
 
 
-float calcularRMS(uint16_t buffer[BUFFER_SIZE]) {
+float calcularRMS(){
     float suma = 0.0f;
 
     for (uint16_t i = 0; i < BUFFER_SIZE; i++) {
-        float val = (float)buffer[i];  // Ya es el valor ADC de 0 a 4095
+        float val = (float)buffer_adc[i];  // Ya es el valor ADC de 0 a 4095
         suma += val * val;
     }
 
@@ -424,6 +442,6 @@ float calcularRMS(uint16_t buffer[BUFFER_SIZE]) {
 
     float volt_rms = (rms * VREF) / 4095.0f;
 
-    return ;
+    return volt_rms;
 }
 
