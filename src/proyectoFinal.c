@@ -230,10 +230,6 @@ void configEINT(void){
 }
 
 void configADC(void){
-	LPC_SC->PCONP |= (1 << 12);
-	__NOP();
-	LPC_SC->PCLKSEL0 &= ~(0x3 << 24); // Limpiar bits 24 y 25
-	LPC_SC->PCLKSEL0 |= (0x1 << 24);  // PCLK_ADC = CCLK/1 (01b)
 	ADC_Init(LPC_ADC, 200000);
 	ADC_BurstCmd(LPC_ADC,DISABLE);
 	ADC_ChannelCmd(LPC_ADC,0, ENABLE);
@@ -323,7 +319,7 @@ void EINT0_IRQHandler(void){
 	LPC_DAC->DACR = 0;
 
 	GPDMA_ChannelCmd(0, ENABLE);    // reactiva el canal con la nueva configuración
-	
+
 	TIM_ResetCounter(LPC_TIM1);
 	TIM_Cmd(LPC_TIM1, ENABLE);
 
