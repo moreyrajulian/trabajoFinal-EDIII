@@ -77,6 +77,8 @@ const char * const NOMBRES_ONDAS[SIGNALS] = {
     "TRIANGULAR",
     "SIERRA"
 };
+volatile uint8_t interrumpio0=0;
+volatile uint8_t interrumpio1=0;
 
 int main(void){
 	llenar_sin();
@@ -140,7 +142,6 @@ void configTIMER0(void) {
     TIM_Init(LPC_TIM0, TIM_TIMER_MODE, &timer0_conf);
     TIM_ConfigMatch(LPC_TIM0, &timer0_match);
     TIM_Cmd(LPC_TIM0, ENABLE);
-	//NVIC_SetPriority(TIMER0_IRQn, (4));
     NVIC_EnableIRQ(TIMER0_IRQn);
 }
 
@@ -156,11 +157,10 @@ void configTIMER1(void){
     match_cfg.ResetOnMatch       = ENABLE;
     match_cfg.StopOnMatch        = ENABLE;
     match_cfg.ExtMatchOutputType = TIM_EXTMATCH_NOTHING;
-    match_cfg.MatchValue         = 100000 - 1;
+    match_cfg.MatchValue         = 100000;
 
     TIM_Init(LPC_TIM1, TIM_TIMER_MODE, &timer_cfg);
     TIM_ConfigMatch(LPC_TIM1, &match_cfg);
-
     NVIC_EnableIRQ(TIMER1_IRQn);
 }
 
@@ -190,12 +190,12 @@ void configPCB(void){
 	eint0.Portnum=2;
 	eint0.Pinnum=10;
 	eint0.Funcnum=1;
-	eint0.Pinmode=PINSEL_PINMODE_TRISTATE;
+	eint0.Pinmode=PINSEL_PINMODE_PULLDOWN;
 
 	eint1.Portnum=2;
 	eint1.Pinnum=11;
 	eint1.Funcnum=1;
-	eint1.Pinmode=PINSEL_PINMODE_TRISTATE;
+	eint1.Pinmode=PINSEL_PINMODE_PULLDOWN;
 
 	PINSEL_ConfigPin(&adc0);
 	PINSEL_ConfigPin(&dac0);
@@ -210,21 +210,19 @@ void configEINT(void){
 
 	eint0.EXTI_Line=0;
 	eint0.EXTI_Mode=EXTI_MODE_EDGE_SENSITIVE;
-	eint0.EXTI_polarity=EXTI_POLARITY_LOW_ACTIVE_OR_FALLING_EDGE;
+	eint0.EXTI_polarity=EXTI_POLARITY_HIGH_ACTIVE_OR_RISING_EDGE;
 
 	eint1.EXTI_Line=1;
 	eint1.EXTI_Mode=EXTI_MODE_EDGE_SENSITIVE;
-	eint1.EXTI_polarity=EXTI_POLARITY_LOW_ACTIVE_OR_FALLING_EDGE;
+	eint1.EXTI_polarity=EXTI_POLARITY_HIGH_ACTIVE_OR_RISING_EDGE;
 
 	EXTI_Init();
 	EXTI_Config(&eint0);
 	EXTI_Config(&eint1);
 	EXTI_ClearEXTIFlag(EXTI_EINT0);
 	EXTI_ClearEXTIFlag(EXTI_EINT1);
-
-	NVIC_SetPriority(EINT0_IRQn, 0);
-	NVIC_SetPriority(EINT1_IRQn, 0);
-
+	NVIC_ClearPendingIRQ(EINT0_IRQn);
+	NVIC_ClearPendingIRQ(EINT1_IRQn);
 	NVIC_EnableIRQ(EINT0_IRQn);
 	NVIC_EnableIRQ(EINT1_IRQn);
 }
@@ -307,35 +305,36 @@ void configDMA2(void){
 
 void EINT0_IRQHandler(void){
 	NVIC_DisableIRQ(EINT0_IRQn);
-	contador0=(contador0+1)%SIGNALS;
+	interrumpio0=1;
 	GPDMA_ChannelCmd(0, DISABLE);
 
 	switch (contador0){
 		case 0: configDMA0(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_2048_MUESTRAS*SIZE_SIN))-1); frecuencia=FRECUENCIA_MAX_2048_MUESTRAS;onda=0;break;
-		case 1: configDMA1(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_2048_MUESTRAS*SIZE_TRIANGULAR))-1);frecuencia=FRECUENCIA_MAX_2048_MUESTRAS; onda=1;break;
-		case 2: configDMA2(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_1024_MUESTRAS*SIZE_SIERRA))-1);frecuencia=FRECUENCIA_MAX_1024_MUESTRAS; onda= 2;break;
+		case 1: configDMA1(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_2048_MUESTRAS*SIZE_TRIANGULAR))-1);frecuencia=FRECUENCIA_MAX_2048_MUESTRAS;onda=1;break;
+		case 2: configDMA2(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_1024_MUESTRAS*SIZE_SIERRA))-1);frecuencia=FRECUENCIA_MAX_1024_MUESTRAS;onda= 2;break;
 	}
 
 	LPC_DAC->DACR = 0;
 
-	GPDMA_ChannelCmd(0, ENABLE);    // reactiva el canal con la nueva configuración
+	contador0 = (contador0 + 1) % SIGNALS;
+
+	GPDMA_ChannelCmd(0, ENABLE);
 
 	TIM_ResetCounter(LPC_TIM1);
 	TIM_Cmd(LPC_TIM1, ENABLE);
-
-	EXTI_ClearEXTIFlag(EXTI_EINT0);
 }
 
 void EINT1_IRQHandler(void){
 	NVIC_DisableIRQ(EINT1_IRQn);
-	contador1=(contador1+1)%FRECUENCIAS;
-
+	interrumpio1=1;
 	switch (contador1){
 		case 0: frecuencia= FRECUENCIA_0; break;
 		case 1: frecuencia= FRECUENCIA_1; break;
 		case 2: frecuencia= FRECUENCIA_2; break;
 		case 3: frecuencia= FRECUENCIA_3; break;
 	}
+
+	contador1=(contador1+1)%FRECUENCIAS;
 
 	switch (onda){
 		case 0: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(frecuencia*SIZE_SIN))-1); break;
@@ -344,9 +343,7 @@ void EINT1_IRQHandler(void){
 	}
 
 	TIM_ResetCounter(LPC_TIM1);
-	TIM_Cmd(LPC_TIM1, ENABLE);
-
-	EXTI_ClearEXTIFlag(EXTI_EINT1);
+	TIM_Cmd(LPC_TIM1, ENABLE);;
 }
 
 void configUART(void){
@@ -375,17 +372,21 @@ void TIMER0_IRQHandler(void) {
 }
 
 void TIMER1_IRQHandler(void) {
-    // Limpiamos el flag del Timer1
-    TIM_ClearIntPending(LPC_TIM1, TIM_MR0_INT);
+	if(interrumpio0){
+		interrumpio0=0;
+		LPC_SC->EXTINT |= (1<<0);
+		NVIC_ClearPendingIRQ(EINT0_IRQn);
+	    NVIC_EnableIRQ(EINT0_IRQn);
+	}
 
-    // Volvemos a habilitar las interrupciones de los botones
-    // Es seguro habilitarlas aunque ya lo estuvieran.
-    NVIC_EnableIRQ(EINT0_IRQn);
-    NVIC_EnableIRQ(EINT1_IRQn);
+	if(interrumpio1){
+		interrumpio1=0;
+		LPC_SC->EXTINT |= (1<<1);
+		NVIC_ClearPendingIRQ(EINT1_IRQn);
+	    NVIC_EnableIRQ(EINT1_IRQn);
+	}
 
-    // Opcional: limpiamos cualquier rebote que haya quedado pendiente
-    EXTI_ClearEXTIFlag(EXTI_EINT0);
-    EXTI_ClearEXTIFlag(EXTI_EINT1);
+	TIM_ClearIntPending(LPC_TIM1, TIM_MR0_INT);
 }
 
 void ADC_IRQHandler(void){
@@ -403,7 +404,7 @@ void ADC_IRQHandler(void){
 
 float calcularRMS(){
 	float suma = 0.0f;
-	uint16_t local_buffer[BUFFER_SIZE]; // Buffer local para copia
+	static uint16_t local_buffer[BUFFER_SIZE]; // Buffer local para copia
 
 	// --- Sección Crítica ---
 	// Copiamos el buffer de ADC rápido para que la ISR no lo pise
@@ -425,6 +426,5 @@ float calcularRMS(){
 	// Convertimos el RMS digital (0-4095) a Volts
 	float volt_rms = (rms_digital * VREF) / 4095.0f;
 
-	return volt_rms; // ¡Devolver el valor!
+	return volt_rms;
 }
-
