@@ -109,7 +109,7 @@ void llenar_triangular(){
 }
 
 void llenar_sierra(){
-	for(int i = 0; i<1024; i++){
+	for(int i = 0; i<SIZE_SIERRA; i++){
 		buffer_sierra[i]=i<<6;
 	}
 }
@@ -157,7 +157,7 @@ void configTIMER1(void){
     match_cfg.ResetOnMatch       = ENABLE;
     match_cfg.StopOnMatch        = ENABLE;
     match_cfg.ExtMatchOutputType = TIM_EXTMATCH_NOTHING;
-    match_cfg.MatchValue         = 100000;
+    match_cfg.MatchValue         = 250000;
 
     TIM_Init(LPC_TIM1, TIM_TIMER_MODE, &timer_cfg);
     TIM_ConfigMatch(LPC_TIM1, &match_cfg);
@@ -250,7 +250,7 @@ void configDMA0(void){
 	lli0.SrcAddr=(uint32_t)buffer_sin;
 	lli0.DstAddr=(uint32_t)&(LPC_DAC->DACR);
 	lli0.NextLLI=(uint32_t)&lli0;
-	lli0.Control=SIZE_SIN|(1<<18)|(2<<21)|(1<<26);
+	lli0.Control=SIZE_SIN|(1<<18)|(1<<21)|(1<<26);
 
 	dma0.ChannelNum=0;
 	dma0.TransferSize=SIZE_SIN;
@@ -269,7 +269,7 @@ void configDMA1(void){
 	lli1.SrcAddr=(uint32_t)buffer_triangular;
 	lli1.DstAddr=(uint32_t)&(LPC_DAC->DACR);
 	lli1.NextLLI=(uint32_t)&lli1;
-	lli1.Control=SIZE_TRIANGULAR|(1<<18)|(2<<21)|(1<<26);
+	lli1.Control=SIZE_TRIANGULAR|(1<<18)|(1<<21)|(1<<26);
 
 	dma1.ChannelNum=0;
 	dma1.SrcMemAddr=(uint32_t)buffer_triangular;
@@ -288,7 +288,7 @@ void configDMA2(void){
 	lli2.SrcAddr=(uint32_t)buffer_sierra;
 	lli2.DstAddr=(uint32_t)&(LPC_DAC->DACR);
 	lli2.NextLLI=(uint32_t)&lli2;
-	lli2.Control=SIZE_SIERRA|(1<<18)|(2<<21)|(1<<26);
+	lli2.Control=SIZE_SIERRA|(1<<18)|(1<<21)|(1<<26);
 
 	dma2.ChannelNum=0;
 	dma2.TransferSize=SIZE_SIERRA;
@@ -309,9 +309,9 @@ void EINT0_IRQHandler(void){
 	GPDMA_ChannelCmd(0, DISABLE);
 
 	switch (contador0){
-		case 0: configDMA0(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_2048_MUESTRAS*SIZE_SIN))-1); frecuencia=FRECUENCIA_MAX_2048_MUESTRAS;onda=0;break;
-		case 1: configDMA1(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_2048_MUESTRAS*SIZE_TRIANGULAR))-1);frecuencia=FRECUENCIA_MAX_2048_MUESTRAS;onda=1;break;
-		case 2: configDMA2(); DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(FRECUENCIA_MAX_1024_MUESTRAS*SIZE_SIERRA))-1);frecuencia=FRECUENCIA_MAX_1024_MUESTRAS;onda= 2;break;
+		case 0: configDMA0(); DAC_SetDMATimeOut(LPC_DAC,((PCLK_DAC)/(FRECUENCIA_MAX_2048_MUESTRAS*SIZE_SIN))); frecuencia=FRECUENCIA_MAX_2048_MUESTRAS;onda=0;break;
+		case 1: configDMA1(); DAC_SetDMATimeOut(LPC_DAC,((PCLK_DAC)/(FRECUENCIA_MAX_2048_MUESTRAS*SIZE_TRIANGULAR)));frecuencia=FRECUENCIA_MAX_2048_MUESTRAS;onda=1;break;
+		case 2: configDMA2(); DAC_SetDMATimeOut(LPC_DAC, (PCLK_DAC / (FRECUENCIA_MAX_1024_MUESTRAS * SIZE_SIERRA)) - 1);frecuencia=FRECUENCIA_MAX_1024_MUESTRAS;onda= 2;break;
 	}
 
 	LPC_DAC->DACR = 0;
@@ -328,19 +328,18 @@ void EINT1_IRQHandler(void){
 	NVIC_DisableIRQ(EINT1_IRQn);
 	interrumpio1=1;
 	switch (contador1){
-		case 0: frecuencia= FRECUENCIA_0; break;
-		case 1: frecuencia= FRECUENCIA_1; break;
-		case 2: frecuencia= FRECUENCIA_2; break;
-		case 3: frecuencia= FRECUENCIA_3; break;
+		case 0: frecuencia=FRECUENCIA_0; break;
+		case 1: frecuencia=FRECUENCIA_1; break;
+		case 2: frecuencia=FRECUENCIA_2; break;
+		case 3: frecuencia=FRECUENCIA_3; break;
 	}
 
 	contador1=(contador1+1)%FRECUENCIAS;
 
 	switch (onda){
-		case 0: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(frecuencia*SIZE_SIN))-1); break;
-		case 1: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(frecuencia*SIZE_TRIANGULAR))-1); break;
-		case 2: DAC_SetDMATimeOut(LPC_DAC,(PCLK_DAC/(frecuencia*SIZE_SIERRA))-1); break;
-	}
+		case 0: DAC_SetDMATimeOut(LPC_DAC,((PCLK_DAC)/(frecuencia*SIZE_SIN))); break;
+		case 1: DAC_SetDMATimeOut(LPC_DAC,((PCLK_DAC)/(frecuencia*SIZE_TRIANGULAR))); break;
+		case 2: DAC_SetDMATimeOut(LPC_DAC, (PCLK_DAC / (frecuencia * SIZE_SIERRA)) - 1); break;	}
 
 	TIM_ResetCounter(LPC_TIM1);
 	TIM_Cmd(LPC_TIM1, ENABLE);;
